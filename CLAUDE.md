@@ -1,3 +1,69 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
+## Project: Agente Inglés — AI English Tutor
+
+An adaptive English tutoring SaaS. The AI tutor "Alex" teaches using the **Augusto Ghio method** (850 palabras esenciales + 16 verbos base, 11 lecciones). Users learn through 5 modes: free conversation, structured lessons, verb drills, writing coaching, and SRS vocabulary flashcards.
+
+**AI Stack**: Groq (`llama-3.3-70b-versatile`) via `@ai-sdk/groq`. Vercel AI SDK v5 patterns — `useChat` + `TextStreamChatTransport` on the client, `streamText` for chat and `generateObject` for structured post-session analysis.
+
+### Routes & Modes
+
+| Route | Mode key | Purpose |
+|-------|----------|---------|
+| `/conversation` | `conversation` | Free chat with Alex, subtle error correction |
+| `/lesson` | `lesson` | Structured Ghio lesson sequence (L1–L11) |
+| `/verb-drill` | `verb_drill` | Drill of the 16 Ghio base verbs in all tenses |
+| `/writing` | `writing` | User submits text; Alex gives line-by-line corrections |
+| `/vocabulary` | `vocabulary` | SRS flashcards (SM-2 algorithm) |
+
+All routes are protected. Middleware redirects unauthenticated users to `/login`.
+
+### Key Architecture Points
+
+**Adaptive Learner Profile** (`learner_profile.profile_json` JSONB): the core differentiator. Stores `strengths`, `weaknesses`, `error_patterns`, `vocabulary_struggling`, `last_week_summary`, etc. Updated after every session by `POST /api/analyze-session` which calls `generateObject` on the full session transcript.
+
+**Two AI API Routes**:
+- `POST /api/tutor` — streaming chat. Reads `user_profiles` + `learner_profile` to build a personalized system prompt with the student's level and known error patterns.
+- `POST /api/analyze-session` — post-session analysis. Parses the transcript, updates `learner_profile`, inserts into `error_log` and `session_analysis`, and awards XP.
+
+**Web Speech**: `useWebSpeech` (STT, `en-US`) and `useSpeechSynthesis` (TTS) hooks are integrated in `TutorChat`. Auto-speak is on by default for assistant messages.
+
+**Gamification**: XP (`user_profiles.xp`), streak (`user_profiles.streak`), lesson progress (`ghio_lesson` 1–11). XP is incremented via Supabase RPC `increment_xp`.
+
+### Database Tables (Supabase)
+
+`user_profiles` · `learner_profile` · `lessons` · `user_lesson_progress` · `vocabulary` · `user_vocabulary` (SM-2 SRS) · `conversations` · `writing_submissions` · `error_log` · `session_analysis`
+
+All user tables have RLS (self-access only). `lessons` and `vocabulary` are public read. New users get `user_profiles` + `learner_profile` rows via trigger `on_auth_user_created`.
+
+Migration: [supabase/migrations/001_initial_schema.sql](supabase/migrations/001_initial_schema.sql)
+
+### Environment Variables Required
+
+```
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+GROQ_API_KEY
+```
+
+Middleware skips auth enforcement when Supabase env vars are absent (safe for local dev without Supabase).
+
+### Commands
+
+```bash
+npm run dev        # Dev server with Turbopack (auto-detects port 3000–3006)
+npm run build      # Production build
+npm run lint       # ESLint
+```
+
+No test suite is configured yet.
+
+---
+
 # SaaS Factory V4 - Agent-First Software Factory
 
 > Eres el **cerebro de una fabrica de software inteligente**.

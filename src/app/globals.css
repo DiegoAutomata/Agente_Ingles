@@ -1,6 +1,256 @@
-@import 'tailwindcss';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-/*
- * Personaliza tu tema aquí
- * Documentación: https://tailwindcss.com/docs/theme
- */
+/* ============================================
+   ALEX ENGLISH TUTOR — Design System
+   Gradient Mesh: aurora oscuro, profesional
+   ============================================ */
+
+:root {
+  /* Colores primarios */
+  --color-bg: #020617;         /* slate-950 */
+  --color-surface: rgba(255,255,255,0.04);
+  --color-border: rgba(255,255,255,0.08);
+  --color-text: #f8fafc;
+  --color-text-muted: rgba(248,250,252,0.6);
+
+  /* Accent: violeta → índigo → cyan */
+  --color-primary: #8b5cf6;    /* violet-500 */
+  --color-primary-glow: rgba(139,92,246,0.3);
+  --color-secondary: #6366f1;  /* indigo-500 */
+  --color-accent: #06b6d4;     /* cyan-500 */
+
+  /* Gradiente de texto */
+  --gradient-text: linear-gradient(135deg, #c4b5fd 0%, #818cf8 50%, #67e8f9 100%);
+
+  /* XP / success */
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+}
+
+/* Base */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================
+   GRADIENT MESH BACKGROUND
+   ============================================ */
+.mesh-bg {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--color-bg);
+}
+
+.mesh-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(at 20% 10%, rgba(139,92,246,0.25) 0px, transparent 55%),
+    radial-gradient(at 80% 0%, rgba(99,102,241,0.20) 0px, transparent 50%),
+    radial-gradient(at 0% 60%, rgba(6,182,212,0.15) 0px, transparent 50%),
+    radial-gradient(at 90% 70%, rgba(168,85,247,0.20) 0px, transparent 50%),
+    radial-gradient(at 40% 90%, rgba(59,130,246,0.15) 0px, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.mesh-bg > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ============================================
+   GLASS CARDS
+   ============================================ */
+.glass-card {
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+}
+
+.glass-card-hover {
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.glass-card-hover:hover {
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(139,92,246,0.3);
+}
+
+/* ============================================
+   GRADIENT TEXT
+   ============================================ */
+.gradient-text {
+  background: var(--gradient-text);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ============================================
+   BOTONES
+   ============================================ */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: white;
+  font-weight: 600;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  background: transparent;
+  color: rgba(248,250,252,0.7);
+  font-weight: 500;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-ghost:hover {
+  background: rgba(255,255,255,0.06);
+  color: white;
+  border-color: rgba(255,255,255,0.2);
+}
+
+/* ============================================
+   INPUTS
+   ============================================ */
+.input-field {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  color: white;
+  font-size: 0.9375rem;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.input-field::placeholder {
+  color: rgba(248,250,252,0.35);
+}
+
+.input-field:focus {
+  border-color: rgba(139,92,246,0.5);
+  background: rgba(255,255,255,0.08);
+}
+
+/* ============================================
+   PROGRESS BARS
+   ============================================ */
+.progress-bar {
+  height: 6px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8b5cf6, #6366f1, #06b6d4);
+  border-radius: 99px;
+  transition: width 0.5s ease;
+}
+
+/* ============================================
+   BADGES / CHIPS
+   ============================================ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-purple {
+  background: rgba(139,92,246,0.2);
+  color: #c4b5fd;
+  border: 1px solid rgba(139,92,246,0.3);
+}
+
+.badge-green {
+  background: rgba(16,185,129,0.2);
+  color: #6ee7b7;
+  border: 1px solid rgba(16,185,129,0.3);
+}
+
+.badge-yellow {
+  background: rgba(245,158,11,0.2);
+  color: #fcd34d;
+  border: 1px solid rgba(245,158,11,0.3);
+}
+
+/* ============================================
+   VOICE BUTTON (pulsación al hablar)
+   ============================================ */
+@keyframes voice-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(139,92,246,0.4); }
+  50% { transform: scale(1.05); box-shadow: 0 0 0 12px rgba(139,92,246,0); }
+}
+
+.voice-active {
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+
+/* ============================================
+   SCROLLBAR
+   ============================================ */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.2);
+}

@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'SaaS Factory App',
-  description: 'Built with SaaS Factory',
+  title: 'Alex — Tu Tutor de Inglés con IA',
+  description: 'Aprende inglés profesional con un tutor de IA que te conoce y adapta su enseñanza a tus debilidades.',
 }
 
 export default function RootLayout({
@@ -12,8 +12,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="es">
+      <body className="antialiased">{children}</body>
     </html>
   )
 }
