@@ -5,24 +5,35 @@ import { useState, useRef, useCallback } from 'react'
 interface UseWebSpeechOptions {
   language?: string
   onResult?: (transcript: string) => void
+  onInterim?: (transcript: string) => void
   onError?: (error: string) => void
 }
 
 export function useWebSpeech({
   language = 'en-US',
   onResult,
+  onInterim,
   onError,
 }: UseWebSpeechOptions = {}) {
   const [isListening, setIsListening] = useState(false)
   const [transcript, setTranscript] = useState('')
-  const recognitionRef = useRef<{ stop: () => void } | null>(null)
+  const recognitionRef = useRef<{ stop: () => void; abort: () => void } | null>(null)
+  const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Refs para callbacks — evita closures stale dentro de los event handlers
+  const onResultRef = useRef(onResult)
+  const onInterimRef = useRef(onInterim)
+  const onErrorRef = useRef(onError)
+  onResultRef.current = onResult
+  onInterimRef.current = onInterim
+  onErrorRef.current = onError
 
   const isSupported = typeof window !== 'undefined' &&
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
 
   const startListening = useCallback(() => {
     if (!isSupported) {
-      onError?.('Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.')
+      onErrorRef.current?.('Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.')
       return
     }
 
@@ -32,22 +43,39 @@ export function useWebSpeech({
       maxAlternatives: number
       continuous: boolean
       onstart: (() => void) | null
-      onresult: ((e: { results: { [0]: { [0]: { transcript: string } } } }) => void) | null
+      onresult: ((e: SpeechRecognitionEvent) => void) | null
       onerror: ((e: { error: string }) => void) | null
       onend: (() => void) | null
       start: () => void
       stop: () => void
+      abort: () => void
     }
 
-    const win = window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor }
+    type SpeechRecognitionEvent = {
+      resultIndex: number
+      results: {
+        length: number
+        [i: number]: { isFinal: boolean; [j: number]: { transcript: string } }
+      }
+    }
+
+    const win = window as unknown as {
+      SpeechRecognition?: SpeechRecognitionCtor
+      webkitSpeechRecognition?: SpeechRecognitionCtor
+    }
     const SpeechRecognitionAPI = win.SpeechRecognition || win.webkitSpeechRecognition
     if (!SpeechRecognitionAPI) return
 
+    // Limpiar sesión anterior
+    clearTimeout(stopTimerRef.current ?? undefined)
+    recognitionRef.current?.abort()
+
     const recognition = new SpeechRecognitionAPI()
     recognition.lang = language
-    recognition.interimResults = false
+    recognition.interimResults = true
     recognition.maxAlternatives = 1
-    recognition.continuous = false
+    // continuous: true → Chrome NO corta si el usuario hace una pausa natural al pensar
+    recognition.continuous = true
 
     recognition.onstart = () => {
       setIsListening(true)
@@ -55,15 +83,40 @@ export function useWebSpeech({
     }
 
     recognition.onresult = (event) => {
-      const result = event.results[0][0].transcript
-      setTranscript(result)
-      onResult?.(result)
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i]
+        const text = result[0].transcript
+
+        if (result.isFinal) {
+          const trimmed = text.trim()
+          if (!trimmed) continue
+
+          setTranscript(trimmed)
+
+          // Llamar onResult inmediatamente — no esperar a onend
+          onResultRef.current?.(trimmed)
+
+          // Detener el reconocimiento 800ms después del resultado final
+          // (da tiempo a capturar posible continuación de la frase)
+          clearTimeout(stopTimerRef.current ?? undefined)
+          stopTimerRef.current = setTimeout(() => {
+            recognitionRef.current?.stop()
+          }, 800)
+        } else {
+          // Resultado interim — muestra en UI mientras el usuario habla
+          setTranscript(text)
+          onInterimRef.current?.(text)
+
+          // Resetear el timer de stop si sigue hablando
+          clearTimeout(stopTimerRef.current ?? undefined)
+        }
+      }
     }
 
     recognition.onerror = (event) => {
       setIsListening(false)
-      if (event.error !== 'aborted') {
-        onError?.(`Error de reconocimiento: ${event.error}`)
+      if (event.error !== 'aborted' && event.error !== 'no-speech') {
+        onErrorRef.current?.(`Error de micrófono: ${event.error}. Verificá los permisos.`)
       }
     }
 
@@ -73,11 +126,11 @@ export function useWebSpeech({
 
     recognitionRef.current = recognition
     recognition.start()
-  }, [isSupported, language, onResult, onError])
+  }, [isSupported, language])
 
   const stopListening = useCallback(() => {
+    clearTimeout(stopTimerRef.current ?? undefined)
     recognitionRef.current?.stop()
-    setIsListening(false)
   }, [])
 
   return {

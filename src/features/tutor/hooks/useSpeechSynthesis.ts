@@ -36,14 +36,21 @@ export function useSpeechSynthesis({
     utterance.rate = rate
     utterance.pitch = pitch
 
-    // Preferir voz femenina en inglés si está disponible
+    // Seleccionar voz según el idioma configurado
     const voices = window.speechSynthesis.getVoices()
-    const preferredVoice = voices.find(v =>
-      v.lang.startsWith('en') && (v.name.includes('Female') || v.name.includes('Samantha') || v.name.includes('Karen') || v.name.includes('Moira'))
-    ) || voices.find(v => v.lang.startsWith('en'))
+    const langPrefix = lang.split('-')[0] // 'es' de 'es-ES', 'en' de 'en-US'
+
+    // Prioridad: voz exacta del locale → voz del mismo idioma → cualquier voz
+    const preferredVoice =
+      voices.find(v => v.lang === lang) ||
+      voices.find(v => v.lang.startsWith(langPrefix)) ||
+      voices.find(v => v.default) ||
+      voices[0]
 
     if (preferredVoice) {
       utterance.voice = preferredVoice
+      // Asegurar que el utterance use el lang de la voz seleccionada
+      utterance.lang = preferredVoice.lang
     }
 
     utterance.onstart = () => setIsSpeaking(true)

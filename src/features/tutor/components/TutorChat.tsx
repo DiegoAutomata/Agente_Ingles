@@ -24,6 +24,9 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
   const [autoSpeak, setAutoSpeak] = useState(true)
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [input, setInput] = useState('')
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => { setMounted(true) }, [])
 
   const transport = useMemo(
     () => new TextStreamChatTransport({ api: '/api/tutor', body: { mode } }),
@@ -52,6 +55,14 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
   const { isListening, startListening, stopListening, isSupported: sttSupported } = useWebSpeech({
     language: 'en-US',
     onResult: (transcript) => {
+      // Auto-envía el mensaje cuando el usuario para de hablar
+      if (transcript.trim()) {
+        stopSpeaking()
+        sendMessage({ text: transcript })
+        setInput('')
+      }
+    },
+    onInterim: (transcript) => {
       setInput(transcript)
     },
     onError: setVoiceError,
@@ -86,7 +97,7 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
       <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
         <span className="text-xs text-white/40 capitalize">{mode.replace('_', ' ')} mode</span>
         <div className="flex items-center gap-2">
-          {ttsSupported && (
+          {mounted && ttsSupported && (
             <button
               onClick={() => {
                 setAutoSpeak(!autoSpeak)
@@ -130,7 +141,7 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
                 }`}>
                   {text}
                 </div>
-                {message.role === 'assistant' && ttsSupported && text && (
+                {message.role === 'assistant' && mounted && ttsSupported && text && (
                   <button
                     onClick={() => speak(text)}
                     className="text-xs text-white/30 hover:text-white/60 transition-colors px-1"
@@ -175,7 +186,7 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
       {/* Input */}
       <div className="p-4 border-t border-white/5">
         <form onSubmit={handleFormSubmit} className="flex items-center gap-2">
-          {sttSupported && (
+          {mounted && sttSupported && (
             <button
               type="button"
               onClick={handleVoiceToggle}
@@ -194,7 +205,7 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
             onChange={e => setInput(e.target.value)}
             placeholder={isListening ? 'Escuchando...' : (placeholder ?? 'Escribe o habla en inglés...')}
             className="input-field flex-1"
-            disabled={isListening}
+            readOnly={isListening}
           />
 
           <button

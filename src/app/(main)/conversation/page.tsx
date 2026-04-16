@@ -1,21 +1,16 @@
-import TutorChat from '@/features/tutor/components/TutorChat'
+import VoiceConversation from '@/features/tutor/components/VoiceConversation'
 
 export default function ConversationPage() {
   return (
     <div className="flex flex-col h-screen">
       <div className="px-6 py-4 border-b border-white/5">
-        <h1 className="font-bold text-white">Conversación Libre</h1>
-        <p className="text-sm text-white/40">Practica hablando en inglés. Alex te corrige en tiempo real.</p>
+        <h1 className="font-bold text-white">Conversación con Alex</h1>
+        <p className="text-sm text-white/40">Alex te habla, vos respondés en inglés. Sin teclado.</p>
       </div>
       <div className="flex-1 overflow-hidden">
-        <TutorChat
-          mode="conversation"
-          initialMessage="Hello! I'm Alex, your personal English tutor. Let's practice speaking!
-
-You can type or click the 🎙️ microphone to speak. I'll correct your mistakes naturally as we talk.
-
-Tell me: what do you do for work? Try to answer in English — don't worry about mistakes, that's what I'm here for! 😊"
-          placeholder="Escribe en inglés... o usa el micrófono 🎙️"
+        <VoiceConversation
+          mode="voice_conversation"
+          initialMessage="Hola, soy Alex, tu tutor de inglés. Te voy a hablar en español para que entiendas todo, pero respondeme en inglés. ¿Listo para practicar? Contame: ¿a qué te dedicás en tu trabajo?"
         />
       </div>
     </div>
