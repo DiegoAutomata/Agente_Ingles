@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import StreakCelebration from '@/features/gamification/components/StreakCelebration'
+import { getLeague, LEAGUES } from '@/shared/constants/leagues'
 
 const GHIO_LESSONS = [
   { n: 1, title: 'Cognates + -ing + IS/ARE', topics: ['50 palabras iguales en inglés y español', 'Terminación -ing', 'IS y ARE'] },
@@ -36,7 +38,7 @@ export default async function DashboardPage() {
     userEmail = user.email ?? null
 
     const [profileRes, learnerRes] = await Promise.all([
-      supabase.from('user_profiles').select('ghio_lesson, module, xp, streak, last_session_at').eq('id', user.id).single(),
+      supabase.from('user_profiles').select('ghio_lesson, module, xp, streak, last_session_at, league').eq('id', user.id).single(),
       supabase.from('learner_profile').select('profile_json').eq('user_id', user.id).single(),
     ])
 
@@ -49,10 +51,18 @@ export default async function DashboardPage() {
   const currentLesson = profile?.ghio_lesson ?? 1
   const xp = profile?.xp ?? 0
   const streak = profile?.streak ?? 0
+  const leagueId = (profile as Record<string, unknown> | null)?.league as string ?? 'bronce'
+  const league = getLeague(leagueId)
+  const maxLevels = league.levels
   const weaknesses = (learnerProfile?.weaknesses as string[]) ?? []
   const lastWeekSummary = learnerProfile?.last_week_summary as string | null
 
-  const lessonProgress = ((currentLesson - 1) / 11) * 100
+  const lessonProgress = ((currentLesson - 1) / maxLevels) * 100
+
+  // Lección actual (para Bronce usa GHIO_LESSONS, otras ligas muestran "Nivel N")
+  const currentLessonTitle = leagueId === 'bronce'
+    ? GHIO_LESSONS[(currentLesson - 1) % 11]?.title ?? ''
+    : `Nivel ${currentLesson}`
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
@@ -72,46 +82,74 @@ export default async function DashboardPage() {
         {[
           { label: 'Racha', value: `${streak}d`, icon: '🔥', color: 'text-orange-400' },
           { label: 'XP Total', value: xp.toLocaleString(), icon: '⭐', color: 'text-yellow-400' },
-          { label: 'Lección', value: `${currentLesson}/11`, icon: '📚', color: 'text-violet-400' },
+          { label: 'Liga', value: `${league.icon} ${league.name}`, icon: '', color: 'text-violet-400' },
         ].map(stat => (
           <div key={stat.label} className="glass-card p-4 text-center">
-            <div className="text-xl mb-1">{stat.icon}</div>
-            <div className={`text-xl font-bold ${stat.color}`}>{stat.value}</div>
+            {stat.icon && <div className="text-xl mb-1">{stat.icon}</div>}
+            <div className={`text-lg font-bold ${stat.color}`}>{stat.value}</div>
             <div className="text-xs text-white/40 mt-0.5">{stat.label}</div>
           </div>
         ))}
       </div>
 
-      {/* Progreso Ghio */}
+      {/* Tu Progreso */}
       <div className="glass-card p-5">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-white">Progreso Método Ghio</h2>
-          <span className="badge badge-purple">L{currentLesson}/11</span>
+          <h2 className="font-semibold text-white">Tu Progreso</h2>
+          <span className="badge badge-purple">
+            {league.icon} L{currentLesson}/{maxLevels} · {league.name}
+          </span>
         </div>
+
+        {/* Liga path visual */}
+        <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
+          {LEAGUES.map((l, i) => {
+            const isActive = l.id === leagueId
+            const isPast = LEAGUES.findIndex(x => x.id === leagueId) > i
+            return (
+              <div key={l.id} className="flex items-center gap-1 shrink-0">
+                <span
+                  className={`text-lg transition-all ${
+                    isActive ? 'opacity-100 scale-110' : isPast ? 'opacity-60' : 'opacity-20'
+                  }`}
+                  title={l.name}
+                >
+                  {l.icon}
+                </span>
+                {i < LEAGUES.length - 1 && (
+                  <div className={`w-6 h-0.5 rounded-full ${isPast || isActive ? 'bg-violet-500' : 'bg-white/10'}`} />
+                )}
+              </div>
+            )
+          })}
+        </div>
+
         <div className="progress-bar mb-4">
           <div className="progress-fill" style={{ width: `${lessonProgress}%` }} />
         </div>
-        <div className="grid grid-cols-11 gap-1">
-          {GHIO_LESSONS.map(lesson => (
-            <div
-              key={lesson.n}
-              title={lesson.title}
-              className={`h-2 rounded-full transition-all ${
-                lesson.n < currentLesson
-                  ? 'bg-violet-500'
-                  : lesson.n === currentLesson
-                  ? 'bg-violet-500/60 animate-pulse'
-                  : 'bg-white/10'
-              }`}
-            />
-          ))}
+
+        <div className="grid gap-1 mb-4" style={{ gridTemplateColumns: `repeat(${maxLevels}, 1fr)` }}>
+          {Array.from({ length: maxLevels }).map((_, i) => {
+            const n = i + 1
+            return (
+              <div
+                key={n}
+                title={leagueId === 'bronce' ? GHIO_LESSONS[i]?.title : `Nivel ${n}`}
+                className={`h-2 rounded-full transition-all ${
+                  n < currentLesson
+                    ? 'bg-violet-500'
+                    : n === currentLesson
+                    ? 'bg-violet-500/60 animate-pulse'
+                    : 'bg-white/10'
+                }`}
+              />
+            )
+          })}
         </div>
+
         <div className="mt-4">
-          <Link
-            href="/lesson"
-            className="btn-primary text-sm py-2.5 px-4 inline-flex"
-          >
-            📚 Continuar Lección {currentLesson}: {GHIO_LESSONS[currentLesson - 1]?.title}
+          <Link href="/lesson" className="btn-primary text-sm py-2.5 px-4 inline-flex">
+            📚 Continuar L{currentLesson}: {currentLessonTitle}
           </Link>
         </div>
       </div>
@@ -132,6 +170,21 @@ export default async function DashboardPage() {
             </Link>
           ))}
         </div>
+      </div>
+
+      {/* Puzzles */}
+      <div>
+        <h2 className="font-semibold text-white mb-3">Puzzles</h2>
+        <Link href="/puzzle" className="glass-card glass-card-hover p-5 flex items-center gap-4 group">
+          <div className="w-12 h-12 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-2xl shrink-0">
+            🧩
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-white">Word Scramble</p>
+            <p className="text-sm text-white/50 mt-0.5">Ordena las letras y formá la palabra correcta en inglés</p>
+          </div>
+          <span className="text-white/30 group-hover:text-violet-400 transition-colors text-xl shrink-0">→</span>
+        </Link>
       </div>
 
       {/* Alex te dice */}
@@ -156,6 +209,8 @@ export default async function DashboardPage() {
           </div>
         </div>
       )}
+
+      <StreakCelebration streak={streak} />
     </div>
   )
 }

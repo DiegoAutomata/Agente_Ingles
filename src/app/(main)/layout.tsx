@@ -1,4 +1,5 @@
 import Sidebar from '@/features/navigation/components/Sidebar'
+import ThemePicker from '@/features/theme/components/ThemePicker'
 
 export default function MainLayout({
   children,
@@ -11,6 +12,7 @@ export default function MainLayout({
       <main className="flex-1 overflow-auto">
         {children}
       </main>
+      <ThemePicker />
     </div>
   )
 }

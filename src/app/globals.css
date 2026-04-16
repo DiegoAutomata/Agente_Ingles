@@ -10,7 +10,9 @@
 :root {
   /* Colores primarios */
   --color-bg: #020617;         /* slate-950 */
-  --color-surface: rgba(255,255,255,0.04);
+  --color-surface: rgba(255,255,255,0.05);
+  --color-surface-hover: rgba(255,255,255,0.07);
+  --color-sidebar-bg: transparent;
   --color-border: rgba(255,255,255,0.08);
   --color-text: #f8fafc;
   --color-text-muted: rgba(248,250,252,0.6);
@@ -53,6 +55,7 @@ body {
   position: relative;
   overflow: hidden;
   background-color: var(--color-bg);
+  transition: background-color 0.4s ease;
 }
 
 .mesh-bg::before {
@@ -78,10 +81,10 @@ body {
    GLASS CARDS
    ============================================ */
 .glass-card {
-  background: rgba(255,255,255,0.05);
+  background: var(--color-surface);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--color-border);
   border-radius: 16px;
 }
 
@@ -90,7 +93,7 @@ body {
 }
 
 .glass-card-hover:hover {
-  background: rgba(255,255,255,0.07);
+  background: var(--color-surface-hover);
   border-color: rgba(139,92,246,0.3);
 }
 
@@ -301,4 +304,26 @@ body {
 }
 .transcript-entry {
   animation: voice-transcript-in 0.25s ease-out;
+}
+
+/* ============================================
+   STREAK CELEBRATION
+   ============================================ */
+
+@keyframes streak-pop {
+  0%   { transform: scale(0.3); opacity: 0; }
+  60%  { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1);   opacity: 1; }
+}
+
+@keyframes streak-fade-out {
+  to { opacity: 0; transform: scale(1.2); }
+}
+
+.streak-pop {
+  animation: streak-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.streak-fade {
+  animation: streak-fade-out 0.25s ease-in forwards;
 }
