@@ -13,6 +13,7 @@ pnpm-lock.yaml
 /.next/
 /out/
 *.rsc
+next-env.d.ts
 
 # Production
 /build
