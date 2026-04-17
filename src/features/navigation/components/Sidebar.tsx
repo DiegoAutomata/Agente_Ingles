@@ -8,11 +8,9 @@ import { useRouter } from 'next/navigation'
 const navItems = [
   { href: '/dashboard', icon: '🏠', label: 'Inicio' },
   { href: '/conversation', icon: '🎙️', label: 'Conversar' },
-  { href: '/lesson', icon: '📚', label: 'Lecciones' },
   { href: '/vocabulary', icon: '🃏', label: 'Vocabulario' },
   { href: '/verb-drill', icon: '⚡', label: '16 Verbos' },
   { href: '/writing', icon: '✍️', label: 'Escritura' },
-  { href: '/puzzle', icon: '🧩', label: 'Puzzles' },
 ]
 
 export default function Sidebar() {

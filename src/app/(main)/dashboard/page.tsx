@@ -18,12 +18,6 @@ const GHIO_LESSONS = [
   { n: 11, title: 'Pronunciación + 850 Palabras', topics: ['Sonidos difíciles', 'Alfabeto inglés', 'Vocabulario A-Z completo'] },
 ]
 
-const QUICK_ACTIONS = [
-  { href: '/conversation', icon: '🎙️', label: 'Conversar', desc: 'Practica hablando libremente' },
-  { href: '/verb-drill', icon: '⚡', label: '16 Verbos', desc: 'Drill intensivo de los verbos base' },
-  { href: '/vocabulary', icon: '🃏', label: 'Vocabulario', desc: 'Repaso SRS de tus palabras' },
-  { href: '/writing', icon: '✍️', label: 'Escribir', desc: 'Email o texto con corrección' },
-]
 
 export default async function DashboardPage() {
   let profile = null
@@ -154,22 +148,22 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Quick Actions */}
+      {/* Modo Desafío */}
       <div>
-        <h2 className="font-semibold text-white mb-3">Acción rápida</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {QUICK_ACTIONS.map(action => (
-            <Link
-              key={action.href}
-              href={action.href}
-              className="glass-card glass-card-hover p-4 text-center"
-            >
-              <div className="text-2xl mb-2">{action.icon}</div>
-              <div className="font-medium text-white text-sm">{action.label}</div>
-              <div className="text-xs text-white/40 mt-0.5">{action.desc}</div>
-            </Link>
-          ))}
-        </div>
+        <h2 className="font-semibold text-white mb-3">Modo Desafío</h2>
+        <Link href="/challenge" className="glass-card glass-card-hover p-5 flex items-center gap-4 group">
+          <div className="w-12 h-12 rounded-xl bg-red-500/15 border border-red-500/25 flex items-center justify-center text-2xl shrink-0">
+            ⚔️
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <p className="font-semibold text-white">Desafío</p>
+              <span className="badge badge-yellow">2× XP</span>
+            </div>
+            <p className="text-sm text-white/50">3 vidas · error = pierdes una · se recargan en 4h</p>
+          </div>
+          <span className="text-white/30 group-hover:text-red-400 transition-colors text-xl shrink-0">→</span>
+        </Link>
       </div>
 
       {/* Puzzles */}

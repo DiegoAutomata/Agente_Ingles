@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { getLessonContent } from '@/features/lessons/data/lesson-content'
 
-export default async function LessonPage() {
+export default async function ChallengePage() {
   let lesson = 1
 
   try {
@@ -28,12 +28,12 @@ export default async function LessonPage() {
     <div className="flex flex-col h-screen">
       <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <h1 className="font-bold text-white">Lección {lesson}</h1>
-          <span className="badge badge-purple">Método Ghio</span>
+          <h1 className="font-bold text-white">Desafío — L{lesson}</h1>
+          <span className="badge badge-yellow">⚔️ 2× XP</span>
         </div>
         <p className="text-xs text-white/30 hidden sm:block">{content.subtitle}</p>
       </div>
-      <LessonClient lessonNumber={lesson} mode="lesson" />
+      <LessonClient lessonNumber={lesson} mode="challenge" />
     </div>
   )
 }
