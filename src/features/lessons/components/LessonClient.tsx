@@ -1,18 +1,56 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { getLessonContent } from '../data/lesson-content'
+import { getLessonContentAsync, buildChallengeContent, type LessonContent } from '../data/lesson-content'
+import { LEAGUES } from '@/shared/constants/leagues'
 import { useLives } from '../hooks/useLives'
 import ConceptCard from './exercises/ConceptCard'
 import MultipleChoice from './exercises/MultipleChoice'
 import WordMatch from './exercises/WordMatch'
 import SentenceBuilder from './exercises/SentenceBuilder'
+import FillBlank from './exercises/FillBlank'
+import StepMap from './StepMap'
+import CompletionSummary from './CompletionSummary'
 import { createClient } from '@/lib/supabase/client'
 
+interface AnswerRecord {
+  type: LessonContent['exercises'][number]['type']
+  wasCorrect: boolean
+}
+
 interface Props {
-  lessonNumber: number
+  serverLesson: number
+  league: string
   mode: 'lesson' | 'challenge'
+}
+
+interface LocalProgress {
+  league: string
+  lesson: number
+}
+
+function getLocalProgress(fallbackLeague: string, fallbackLesson: number): LocalProgress {
+  try {
+    const raw = localStorage.getItem('alex-progress')
+    if (raw) return JSON.parse(raw) as LocalProgress
+  } catch { /* ignore */ }
+  return { league: fallbackLeague, lesson: fallbackLesson }
+}
+
+function saveLocalProgress(league: string, lesson: number) {
+  try {
+    localStorage.setItem('alex-progress', JSON.stringify({ league, lesson }))
+  } catch { /* ignore */ }
+}
+
+function getMaxLevels(leagueId: string): number {
+  return LEAGUES.find(l => l.id === leagueId)?.levels ?? 11
+}
+
+function getNextLeague(currentId: string): string | null {
+  const idx = LEAGUES.findIndex(l => l.id === currentId)
+  return idx >= 0 && idx < LEAGUES.length - 1 ? LEAGUES[idx + 1].id : null
 }
 
 function RechargeCountdown({ target }: { target: number }) {
@@ -26,22 +64,71 @@ function RechargeCountdown({ target }: { target: number }) {
   )
 }
 
-export default function LessonClient({ lessonNumber, mode }: Props) {
-  const content = getLessonContent(lessonNumber)
+export default function LessonClient({ serverLesson, league: serverLeague, mode }: Props) {
   const isChallenge = mode === 'challenge'
   const { lives, loseLife, nextRechargeAt } = useLives(isChallenge)
 
+  const [content, setContent] = useState<LessonContent | null>(null)
+  const [actualLesson, setActualLesson] = useState<number | null>(null)
+  const [actualLeague, setActualLeague] = useState<string>(serverLeague)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [slideKey, setSlideKey] = useState(0)
   const [score, setScore] = useState(0)
   const [completed, setCompleted] = useState(false)
   const [xpEarned, setXpEarned] = useState(0)
   const [outOfLives, setOutOfLives] = useState(false)
+  const [answers, setAnswers] = useState<AnswerRecord[]>([])
 
-  const total = content.exercises.length
-  const exercise = content.exercises[currentIndex]
+  // Resolve actual lesson from localStorage vs server
+  useEffect(() => {
+    const local = getLocalProgress(serverLeague, serverLesson)
+    const resolvedLeague = local.league ?? serverLeague
+    const resolvedLesson = Math.max(serverLesson, local.lesson)
+    setActualLeague(resolvedLeague)
+    setActualLesson(resolvedLesson)
+  }, [serverLesson, serverLeague])
+
+  // Load content once lesson is resolved
+  useEffect(() => {
+    if (actualLesson === null) return
+
+    if (isChallenge) {
+      const exercises = buildChallengeContent(actualLeague)
+      setContent({
+        lessonNumber: actualLesson,
+        title: 'Modo Desafío',
+        subtitle: `Liga ${actualLeague} — 7 ejercicios aleatorios`,
+        colorFrom: 'from-yellow-500',
+        colorTo: 'to-orange-400',
+        xpReward: 80,
+        exercises,
+      })
+    } else {
+      getLessonContentAsync(actualLeague, actualLesson)
+        .then(setContent)
+        .catch(() => {
+          // fallback: load bronce L1
+          getLessonContentAsync('bronce', 1).then(setContent)
+        })
+    }
+  }, [actualLesson, actualLeague, isChallenge])
+
+  if (!content || actualLesson === null) {
+    return (
+      <div className="flex items-center justify-center flex-1">
+        <div className="text-white/30 text-sm animate-pulse">Cargando lección…</div>
+      </div>
+    )
+  }
+
+  // Narrowed non-null references for use in closures below
+  const loadedContent = content
+  const loadedLesson = actualLesson
+
+  const total = loadedContent.exercises.length
+  const exercise = loadedContent.exercises[currentIndex]
   const progress = (currentIndex / total) * 100
-  const scoredTotal = content.exercises.filter(e => e.type !== 'concept').length
+  const scoredTotal = loadedContent.exercises.filter(e => e.type !== 'concept').length
 
   function goNext(newScore: number) {
     if (currentIndex >= total - 1) {
@@ -55,6 +142,8 @@ export default function LessonClient({ lessonNumber, mode }: Props) {
   function handleDone(wasCorrect: boolean) {
     const newScore = wasCorrect ? score + 1 : score
     if (wasCorrect) setScore(newScore)
+
+    setAnswers(prev => [...prev, { type: exercise.type, wasCorrect }])
 
     if (!wasCorrect && isChallenge) {
       const remaining = loseLife()
@@ -75,19 +164,36 @@ export default function LessonClient({ lessonNumber, mode }: Props) {
 
   async function doFinish(finalScore: number) {
     const accuracy = scoredTotal > 0 ? finalScore / scoredTotal : 1
-    const xp = Math.round(accuracy * content.xpReward * (isChallenge ? 2 : 1))
+    const xp = Math.round(accuracy * loadedContent.xpReward * (isChallenge ? 2 : 1))
     setXpEarned(xp)
     setCompleted(true)
 
-    try {
-      if (!isChallenge) {
+    if (!isChallenge) {
+      // Compute next state locally as fallback
+      const maxLevels = getMaxLevels(actualLeague)
+      let nextLeague = actualLeague
+      let nextLesson = loadedLesson + 1
+      if (loadedLesson >= maxLevels) {
+        const next = getNextLeague(actualLeague)
+        if (next) {
+          nextLeague = next
+          nextLesson = 1
+        } else {
+          nextLesson = maxLevels // already at max
+        }
+      }
+
+      // Always save locally first (fallback for offline/no-supabase)
+      saveLocalProgress(nextLeague, nextLesson)
+
+      try {
         await fetch('/api/complete-lesson', { method: 'POST' })
-      } else {
+      } catch { /* offline */ }
+    } else {
+      try {
         const supabase = createClient()
         await supabase.rpc('increment_xp', { xp_amount: xp })
-      }
-    } catch {
-      // offline / supabase not configured
+      } catch { /* offline */ }
     }
   }
 
@@ -108,48 +214,35 @@ export default function LessonClient({ lessonNumber, mode }: Props) {
 
   // ── Completion ────────────────────────────────────────────────
   if (completed) {
-    const accuracy = scoredTotal > 0 ? Math.round((score / scoredTotal) * 100) : 100
     return (
-      <div className="flex flex-col items-center justify-center flex-1 p-8 text-center space-y-6">
-        <div className="text-6xl pop-in">🎉</div>
-        <div>
-          <h2 className="text-2xl font-bold text-white">¡Lección completada!</h2>
-          <p className="text-white/50 text-sm mt-1">{content.title}</p>
-        </div>
-
-        <div className="glass-card p-6 w-full max-w-xs space-y-3">
-          {scoredTotal > 0 && (
-            <div className="flex justify-between text-sm">
-              <span className="text-white/50">Precisión</span>
-              <span className="font-bold text-white">{accuracy}%</span>
-            </div>
-          )}
-          <div className="flex justify-between text-sm">
-            <span className="text-white/50">XP ganados</span>
-            <span className="font-bold text-yellow-400">
-              +{xpEarned} XP{isChallenge ? ' ×2' : ''}
-            </span>
-          </div>
-          {isChallenge && (
-            <div className="flex justify-between text-sm">
-              <span className="text-white/50">Vidas restantes</span>
-              <span className="text-red-400">
-                {'♥'.repeat(lives)}{'♡'.repeat(Math.max(0, 3 - lives))}
-              </span>
-            </div>
-          )}
-        </div>
-
-        <Link href="/dashboard" className="btn-primary">← Inicio</Link>
-      </div>
+      <CompletionSummary
+        isChallenge={isChallenge}
+        score={score}
+        scoredTotal={scoredTotal}
+        xpEarned={xpEarned}
+        lives={lives}
+        answers={answers}
+        lessonTitle={loadedContent.title}
+      />
     )
   }
 
   // ── Slide ─────────────────────────────────────────────────────
   return (
     <div className="flex flex-col flex-1 overflow-y-auto p-4 max-w-2xl mx-auto w-full gap-6">
+      {/* Step map */}
+      <div className="shrink-0 pt-2">
+        <StepMap
+          steps={loadedContent.exercises.map((e, i) => ({
+            type: e.type,
+            wasCorrect: i < currentIndex ? answers[i]?.wasCorrect : undefined,
+          }))}
+          currentIdx={currentIndex}
+        />
+      </div>
+
       {/* Progress bar + lives */}
-      <div className="flex items-center gap-3 pt-2 shrink-0">
+      <div className="flex items-center gap-3 shrink-0">
         <div className="flex-1 bg-white/10 rounded-full h-2 overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-violet-500 to-purple-400 rounded-full transition-all duration-500"
@@ -192,6 +285,9 @@ export default function LessonClient({ lessonNumber, mode }: Props) {
         )}
         {exercise.type === 'sentence_builder' && (
           <SentenceBuilder exercise={exercise} onDone={handleDone} />
+        )}
+        {exercise.type === 'fill_blank' && (
+          <FillBlank exercise={exercise} onDone={handleDone} />
         )}
       </div>
     </div>

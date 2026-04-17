@@ -1,10 +1,10 @@
 import LessonClient from '@/features/lessons/components/LessonClient'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { getLessonContent } from '@/features/lessons/data/lesson-content'
 
 export default async function ChallengePage() {
   let lesson = 1
+  let league = 'bronce'
 
   try {
     const supabase = await createClient()
@@ -13,16 +13,15 @@ export default async function ChallengePage() {
 
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('ghio_lesson')
+      .select('ghio_lesson, league')
       .eq('id', user.id)
       .single()
 
     lesson = profile?.ghio_lesson ?? 1
+    league = (profile as { league?: string } | null)?.league ?? 'bronce'
   } catch {
     // Supabase no configurado — usa defaults
   }
-
-  const content = getLessonContent(lesson)
 
   return (
     <div className="flex flex-col h-screen">
@@ -31,9 +30,8 @@ export default async function ChallengePage() {
           <h1 className="font-bold text-white">Desafío — L{lesson}</h1>
           <span className="badge badge-yellow">⚔️ 2× XP</span>
         </div>
-        <p className="text-xs text-white/30 hidden sm:block">{content.subtitle}</p>
       </div>
-      <LessonClient lessonNumber={lesson} mode="challenge" />
+      <LessonClient serverLesson={lesson} league={league} mode="challenge" />
     </div>
   )
 }

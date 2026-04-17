@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import type { ConceptExercise } from '../../data/lesson-content'
 
 interface Props {
@@ -8,6 +9,15 @@ interface Props {
 }
 
 export default function ConceptCard({ exercise, onNext }: Props) {
+  const [quizSelected, setQuizSelected] = useState<number | null>(null)
+  const hasQuiz = !!exercise.flashQuiz
+  const canAdvance = !hasQuiz || quizSelected === exercise.flashQuiz?.correct
+
+  function handleQuizSelect(i: number) {
+    if (quizSelected !== null) return
+    setQuizSelected(i)
+  }
+
   return (
     <div className="space-y-5">
       <div className="text-center space-y-2">
@@ -43,8 +53,51 @@ export default function ConceptCard({ exercise, onNext }: Props) {
         </div>
       )}
 
-      <button onClick={onNext} className="btn-primary w-full">
-        Entendido →
+      {/* Flash Quiz */}
+      {exercise.flashQuiz && (
+        <div className="space-y-3 border-t border-white/10 pt-4">
+          <p className="text-white/50 text-xs uppercase tracking-wider text-center">
+            ✅ Verificá que entendiste
+          </p>
+          <p className="text-white text-sm font-medium text-center">{exercise.flashQuiz.question}</p>
+          <div className="grid grid-cols-2 gap-2">
+            {exercise.flashQuiz.options.map((opt, i) => {
+              let cls =
+                'py-2.5 px-3 rounded-xl text-sm text-center border transition-all cursor-pointer '
+              if (quizSelected === null) {
+                cls += 'border-white/10 text-white/70 hover:border-violet-500/40 hover:text-white'
+              } else if (i === exercise.flashQuiz!.correct) {
+                cls += 'border-green-500/60 bg-green-500/10 text-green-300'
+              } else if (i === quizSelected) {
+                cls += 'border-red-500/60 bg-red-500/10 text-red-300'
+              } else {
+                cls += 'border-white/5 text-white/20 cursor-default'
+              }
+              return (
+                <button key={i} className={cls} onClick={() => handleQuizSelect(i)}>
+                  {opt}
+                </button>
+              )
+            })}
+          </div>
+          {quizSelected !== null && quizSelected !== exercise.flashQuiz.correct && (
+            <p className="text-red-400 text-xs text-center slide-up">
+              Incorrecto — seleccioná la respuesta correcta para continuar
+            </p>
+          )}
+        </div>
+      )}
+
+      <button
+        onClick={onNext}
+        disabled={!canAdvance}
+        className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${
+          canAdvance
+            ? 'btn-primary'
+            : 'bg-white/5 text-white/25 border border-white/10 cursor-not-allowed'
+        }`}
+      >
+        {hasQuiz && quizSelected === null ? 'Respondé el quiz para continuar' : 'Entendido →'}
       </button>
     </div>
   )

@@ -17,7 +17,7 @@ DECLARE
   max_levels   int;
   curr_idx     int;
   league_order text[]  := ARRAY['bronce','plata','oro','diamante','maestro','gran_maestro'];
-  league_levels int[]  := ARRAY[11,10,10,10,10,10];
+  league_levels int[]  := ARRAY[11,10,10,8,8,6];
 BEGIN
   SELECT ghio_lesson, league
   INTO curr_lesson, curr_league
