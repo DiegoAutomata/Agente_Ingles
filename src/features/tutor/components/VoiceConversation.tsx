@@ -98,7 +98,25 @@ interface VoiceConversationProps {
 export default function VoiceConversation({ mode = 'voice_conversation', initialMessage }: VoiceConversationProps) {
   const [mounted, setMounted] = useState(false)
   const [showTranscript, setShowTranscript] = useState(false)
+  const [analyzingSession, setAnalyzingSession] = useState(false)
+  const [sessionDone, setSessionDone] = useState(false)
   const transcriptEndRef = useRef<HTMLDivElement>(null)
+
+  async function handleEndSession(msgs: UIMessage[]) {
+    if (msgs.length < 3 || analyzingSession) return
+    setAnalyzingSession(true)
+    const transcript = msgs.map(m => ({ role: m.role, content: getMessageText(m) }))
+    try {
+      await fetch('/api/analyze-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript, session_id: `voice-${Date.now()}` }),
+      })
+    } catch { /* offline */ } finally {
+      setAnalyzingSession(false)
+      setSessionDone(true)
+    }
+  }
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -147,6 +165,21 @@ export default function VoiceConversation({ mode = 'voice_conversation', initial
           </span>
         </div>
 
+        <div className="flex items-center gap-2">
+          {hasStarted && messages.length >= 3 && !sessionDone && (
+            <button
+              onClick={() => handleEndSession(messages)}
+              disabled={analyzingSession}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-all bg-green-500/15 text-green-300 border border-green-500/20 hover:bg-green-500/25 disabled:opacity-50"
+            >
+              {analyzingSession ? '⏳ Analizando…' : '✅ Terminar'}
+            </button>
+          )}
+          {sessionDone && (
+            <span className="text-xs text-green-400">¡Perfil actualizado!</span>
+          )}
+        </div>
+
         {!canUseVoice && (
           <span className="text-xs text-yellow-400/80 bg-yellow-500/10 px-2 py-1 rounded-lg border border-yellow-500/20">
             Requiere Chrome o Edge
@@ -159,6 +192,7 @@ export default function VoiceConversation({ mode = 'voice_conversation', initial
           </span>
         )}
       </div>
+
 
       {/* Zona central: avatar + estado */}
       <div className="flex-1 flex flex-col items-center justify-center gap-6 py-8">

@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { VERBS, DRILLS, type VerbDrill } from '../data/verbs'
+import { createClient } from '@/lib/supabase/client'
 
 type Phase = 'gallery' | 'drill' | 'done'
 
@@ -23,6 +24,30 @@ export default function VerbArena() {
   const [score, setScore] = useState(0)
   const [selected, setSelected] = useState<number | null>(null)
   const [showFeedback, setShowFeedback] = useState(false)
+  const [drillAnswers, setDrillAnswers] = useState<{ q: string; verb: string; ok: boolean; answer: string }[]>([])
+  const [sessionFired, setSessionFired] = useState(false)
+
+  useEffect(() => {
+    if (phase !== 'done' || sessionFired || drillAnswers.length === 0) return
+    setSessionFired(true)
+    const xp = Math.round((score / drillAnswers.length) * 60)
+    const supabase = createClient()
+    supabase.rpc('increment_xp', { xp_amount: xp }).then(() => {})
+    const transcript = [
+      { role: 'assistant' as const, content: 'Verb drill session — 16 Ghio base verbs.' },
+      ...drillAnswers.flatMap(a => [
+        { role: 'assistant' as const, content: a.q },
+        { role: 'user' as const, content: a.ok ? `[correct] "${a.answer}"` : `[incorrect] Correct: "${a.answer}"` },
+      ]),
+    ]
+    if (transcript.length >= 3) {
+      fetch('/api/analyze-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript, session_id: `verb-drill-${Date.now()}` }),
+      }).catch(() => {})
+    }
+  }, [phase, sessionFired, score, drillAnswers])
 
   const current = drills[idx]
   const verbInfo = VERBS.find(v => v.base === current?.verbBase)
@@ -41,6 +66,8 @@ export default function VerbArena() {
     setScore(0)
     setSelected(null)
     setShowFeedback(false)
+    setDrillAnswers([])
+    setSessionFired(false)
     setPhase('drill')
   }
 
@@ -48,6 +75,10 @@ export default function VerbArena() {
     if (selected !== null) return
     setSelected(i)
     if (i === current.correct) setScore(s => s + 1)
+    setDrillAnswers(prev => [
+      ...prev,
+      { q: current.question, verb: current.verbBase, ok: i === current.correct, answer: current.options[current.correct] },
+    ])
     setTimeout(() => setShowFeedback(true), 300)
   }
 

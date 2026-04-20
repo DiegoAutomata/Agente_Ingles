@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import PWARegister from '@/shared/components/PWARegister'
 
 export const metadata: Metadata = {
   title: 'Alex — Tu Tutor de Inglés con IA',
@@ -13,7 +14,17 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <body className="antialiased">{children}</body>
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#7c3aed" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Agente Inglés" />
+      </head>
+      <body className="antialiased">
+        {children}
+        <PWARegister />
+      </body>
     </html>
   )
 }

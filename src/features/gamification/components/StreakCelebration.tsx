@@ -17,11 +17,11 @@ export default function StreakCelebration({ streak }: { streak: number }) {
       setVisible(true)
       setFading(false)
 
-      const fadeTimer = setTimeout(() => setFading(true), 700)
+      const fadeTimer = setTimeout(() => setFading(true), 2800)
       const hideTimer = setTimeout(() => {
         setVisible(false)
         setFading(false)
-      }, 1000)
+      }, 3200)
 
       localStorage.setItem(STORAGE_KEY, String(streak))
 

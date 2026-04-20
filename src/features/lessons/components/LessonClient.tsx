@@ -17,6 +17,25 @@ import { createClient } from '@/lib/supabase/client'
 interface AnswerRecord {
   type: LessonContent['exercises'][number]['type']
   wasCorrect: boolean
+  question?: string
+  correctAnswer?: string
+}
+
+function buildLessonTranscript(
+  answers: AnswerRecord[],
+  lessonTitle: string,
+): Array<{ role: string; content: string }> {
+  const msgs: Array<{ role: string; content: string }> = [
+    { role: 'assistant', content: `Lesson: "${lessonTitle}". Practice session.` },
+  ]
+  for (const a of answers) {
+    if (a.type === 'concept') continue
+    if (a.question) msgs.push({ role: 'assistant', content: a.question })
+    const outcome = a.wasCorrect ? '[correct]' : '[incorrect]'
+    const detail = a.correctAnswer ? ` Correct answer: "${a.correctAnswer}"` : ''
+    msgs.push({ role: 'user', content: `${outcome}${detail}` })
+  }
+  return msgs
 }
 
 interface Props {
@@ -143,7 +162,24 @@ export default function LessonClient({ serverLesson, league: serverLeague, mode 
     const newScore = wasCorrect ? score + 1 : score
     if (wasCorrect) setScore(newScore)
 
-    setAnswers(prev => [...prev, { type: exercise.type, wasCorrect }])
+    // Capture exercise context for analyze-session transcript
+    let question: string | undefined
+    let correctAnswer: string | undefined
+    if (exercise.type === 'multiple_choice') {
+      question = exercise.question
+      correctAnswer = exercise.options[exercise.correct]
+    } else if (exercise.type === 'fill_blank') {
+      question = exercise.sentence
+      correctAnswer = exercise.options[exercise.correct]
+    } else if (exercise.type === 'sentence_builder') {
+      question = exercise.instruction
+      correctAnswer = exercise.answer.join(' ')
+    } else if (exercise.type === 'word_match') {
+      question = exercise.instruction
+      correctAnswer = 'matched all word pairs'
+    }
+
+    setAnswers(prev => [...prev, { type: exercise.type, wasCorrect, question, correctAnswer }])
 
     if (!wasCorrect && isChallenge) {
       const remaining = loseLife()
@@ -169,7 +205,6 @@ export default function LessonClient({ serverLesson, league: serverLeague, mode 
     setCompleted(true)
 
     if (!isChallenge) {
-      // Compute next state locally as fallback
       const maxLevels = getMaxLevels(actualLeague)
       let nextLeague = actualLeague
       let nextLesson = loadedLesson + 1
@@ -179,21 +214,36 @@ export default function LessonClient({ serverLesson, league: serverLeague, mode 
           nextLeague = next
           nextLesson = 1
         } else {
-          nextLesson = maxLevels // already at max
+          nextLesson = maxLevels
         }
       }
-
-      // Always save locally first (fallback for offline/no-supabase)
       saveLocalProgress(nextLeague, nextLesson)
 
       try {
-        await fetch('/api/complete-lesson', { method: 'POST' })
+        await fetch('/api/complete-lesson', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ xp_amount: xp }),
+        })
       } catch { /* offline */ }
     } else {
       try {
         const supabase = createClient()
         await supabase.rpc('increment_xp', { xp_amount: xp })
       } catch { /* offline */ }
+    }
+
+    // Fire-and-forget: update learner profile with session analysis
+    const transcript = buildLessonTranscript(answers, loadedContent.title)
+    if (transcript.length >= 3) {
+      fetch('/api/analyze-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript,
+          session_id: `lesson-${actualLeague}-${loadedLesson}-${Date.now()}`,
+        }),
+      }).catch(() => {})
     }
   }
 

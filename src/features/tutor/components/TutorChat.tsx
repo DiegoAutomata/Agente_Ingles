@@ -25,8 +25,32 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [mounted, setMounted] = useState(false)
+  const [analyzingSession, setAnalyzingSession] = useState(false)
+  const [sessionDone, setSessionDone] = useState(false)
 
   useEffect(() => { setMounted(true) }, [])
+
+  async function handleEndSession() {
+    if (messages.length < 3 || analyzingSession) return
+    setAnalyzingSession(true)
+    const transcript = messages.map(m => ({
+      role: m.role,
+      content: getMessageText(m),
+    }))
+    try {
+      await fetch('/api/analyze-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript,
+          session_id: `conversation-${Date.now()}`,
+        }),
+      })
+    } catch { /* offline */ } finally {
+      setAnalyzingSession(false)
+      setSessionDone(true)
+    }
+  }
 
   const transport = useMemo(
     () => new TextStreamChatTransport({ api: '/api/tutor', body: { mode } }),
@@ -97,6 +121,18 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
       <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
         <span className="text-xs text-white/40 capitalize">{mode.replace('_', ' ')} mode</span>
         <div className="flex items-center gap-2">
+          {(mode === 'conversation' || mode === 'writing' || mode === 'verb_drill') && messages.length >= 3 && !sessionDone && (
+            <button
+              onClick={handleEndSession}
+              disabled={analyzingSession}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-all bg-green-500/15 text-green-300 border border-green-500/20 hover:bg-green-500/25 disabled:opacity-50"
+            >
+              {analyzingSession ? '⏳ Analizando…' : '✅ Terminar sesión'}
+            </button>
+          )}
+          {sessionDone && (
+            <span className="text-xs text-green-400 px-2">¡Perfil actualizado!</span>
+          )}
           {mounted && ttsSupported && (
             <button
               onClick={() => {
