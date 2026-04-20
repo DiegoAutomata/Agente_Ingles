@@ -5,16 +5,20 @@ import webpush from 'web-push'
 // Este endpoint es llamado por el cron de Vercel (vercel.json) a las 18:00 UTC todos los días.
 // También acepta POST con Bearer token para llamadas manuales.
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || 'mailto:noreply@example.com',
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-  process.env.VAPID_PRIVATE_KEY!
-)
+function initWebpush() {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:noreply@example.com',
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
+    process.env.VAPID_PRIVATE_KEY!
+  )
+}
 
 export async function GET(request: Request) {
   // Vercel cron llama con un header especial — validamos con el service role key
@@ -39,6 +43,9 @@ export async function POST(request: Request) {
 
 async function runReminder() {
   try {
+    initWebpush()
+    const supabaseAdmin = getSupabaseAdmin()
+
     // Usuarios que llevan más de 20h sin sesión Y tienen suscripciones push activas
     const { data: usersAtRisk } = await supabaseAdmin
       .from('user_profiles')

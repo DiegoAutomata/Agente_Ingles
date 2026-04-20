@@ -2,16 +2,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || 'mailto:noreply@example.com',
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-  process.env.VAPID_PRIVATE_KEY!
-)
+function initWebpush() {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:noreply@example.com',
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
+    process.env.VAPID_PRIVATE_KEY!
+  )
+}
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -20,6 +24,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    initWebpush()
+    const supabaseAdmin = getSupabaseAdmin()
+
     const { userId, notification } = await request.json() as {
       userId: string
       notification: { title: string; body?: string; icon?: string; data?: Record<string, unknown> }
