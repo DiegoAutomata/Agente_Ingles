@@ -7,10 +7,10 @@
 (vacio)
 
 ## project/ — Proyectos y decisiones activas
-(vacio)
+- [Historial de cambios](project/historial-cambios.md) — Features implementadas, fixes de seguridad, estado actual del proyecto
 
 ## feedback/ — Correcciones y preferencias
 (vacio)
 
 ## reference/ — Donde encontrar cosas
-(vacio)
+- [Deploy — URLs y accesos](reference/deploy.md) — URL Vercel (producción), Supabase, GitHub
