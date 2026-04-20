@@ -6,13 +6,7 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return new Response('Unauthorized', { status: 401 })
 
-    let xp_amount = 100
-    try {
-      const body = await request.json() as { xp_amount?: number }
-      if (typeof body.xp_amount === 'number' && body.xp_amount > 0) {
-        xp_amount = body.xp_amount
-      }
-    } catch { /* body parse failed, use default */ }
+    const xp_amount = 100
 
     const { data, error } = await supabase.rpc('advance_lesson', {
       user_id_param: user.id,

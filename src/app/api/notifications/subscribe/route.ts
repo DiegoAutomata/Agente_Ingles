@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabaseAdmin() {
+  return createSupabaseAdmin(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const { subscription, userId, deviceInfo, oldEndpoint } = await request.json() as {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { subscription, deviceInfo, oldEndpoint } = await request.json() as {
       subscription: { endpoint: string; keys: { p256dh: string; auth: string } }
-      userId?: string
       deviceInfo?: { platform?: string; language?: string }
       oldEndpoint?: string
     }
@@ -19,8 +25,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid subscription' }, { status: 400 })
     }
 
+    const supabaseAdmin = getSupabaseAdmin()
+
     if (oldEndpoint) {
-      await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', oldEndpoint)
+      await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', oldEndpoint).eq('user_id', user.id)
     }
 
     const { data: existing } = await supabaseAdmin
@@ -40,7 +48,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabaseAdmin
       .from('push_subscriptions')
       .insert({
-        user_id: userId ?? null,
+        user_id: user.id,
         endpoint: subscription.endpoint,
         p256dh: subscription.keys.p256dh,
         auth: subscription.keys.auth,
@@ -60,8 +68,13 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const { endpoint } = await request.json() as { endpoint: string }
-    await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', endpoint)
+    const supabaseAdmin = getSupabaseAdmin()
+    await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', endpoint).eq('user_id', user.id)
     return NextResponse.json({ success: true })
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error'
