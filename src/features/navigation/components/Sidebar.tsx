@@ -11,6 +11,8 @@ const navItems = [
   { href: '/vocabulary', icon: '🃏', label: 'Vocabulario' },
   { href: '/verb-drill', icon: '⚡', label: '16 Verbos' },
   { href: '/writing', icon: '✍️', label: 'Escritura' },
+  { href: '/leaderboard', icon: '🏆', label: 'Ranking' },
+  { href: '/profile', icon: '👤', label: 'Perfil' },
 ]
 
 export default function Sidebar() {

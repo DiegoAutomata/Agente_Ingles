@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { WritingFeedback } from '@/app/api/writing-coach/route'
+import { createClient } from '@/lib/supabase/client'
 
 const PROMPTS = [
   { label: '📧 Email al jefe',     text: 'Write a short email to your boss saying you will be 15 minutes late to the morning meeting due to a traffic jam.' },
@@ -32,6 +33,7 @@ type Phase = 'write' | 'loading' | 'results'
 export default function CorrectionBoard() {
   const [phase, setPhase] = useState<Phase>('write')
   const [text, setText] = useState('')
+  const [activePrompt, setActivePrompt] = useState<string | undefined>(undefined)
   const [feedback, setFeedback] = useState<WritingFeedback | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -44,12 +46,29 @@ export default function CorrectionBoard() {
       const res = await fetch('/api/writing-coach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, prompt: activePrompt }),
       })
       if (!res.ok) throw new Error('Error del servidor')
       const data = (await res.json()) as WritingFeedback
       setFeedback(data)
       setPhase('results')
+
+      // Award XP + update learner profile (fire-and-forget)
+      const xp = Math.round(data.overallScore * 8) // max 80 XP
+      const supabase = createClient()
+      supabase.rpc('increment_xp', { xp_amount: xp }).then(() => {})
+      const errorSummary = data.errors.map(e => `${e.type}: "${e.wrong}" → "${e.correct}"`).join('; ')
+      fetch('/api/analyze-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript: [
+            { role: 'user', content: `[Writing submission]\n${text}` },
+            { role: 'assistant', content: `[Feedback] Score: ${data.overallScore}/10. ${data.summary}${errorSummary ? ` Errors: ${errorSummary}.` : ''} Strengths: ${data.strengths.join(', ')}.` },
+          ],
+          session_id: `writing-${Date.now()}`,
+        }),
+      }).catch(() => {})
     } catch {
       setError('No se pudo analizar el texto. Verificá la conexión e intentá de nuevo.')
       setPhase('write')
@@ -77,7 +96,7 @@ export default function CorrectionBoard() {
             {PROMPTS.map(p => (
               <button
                 key={p.label}
-                onClick={() => setText(p.text)}
+                onClick={() => { setText(p.text); setActivePrompt(p.label) }}
                 className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-white/50 hover:border-violet-500/40 hover:text-violet-300 transition-all"
               >
                 {p.label}

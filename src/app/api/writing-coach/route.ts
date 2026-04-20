@@ -1,5 +1,6 @@
 import { createGroq } from '@ai-sdk/groq'
 import { generateObject } from 'ai'
+import { createClient } from '@/lib/supabase/server'
 import { z } from 'zod'
 
 const groq = createGroq({ apiKey: process.env.GROQ_API_KEY })
@@ -24,7 +25,7 @@ export type WritingFeedback = z.infer<typeof CorrectionSchema>
 
 export async function POST(req: Request) {
   try {
-    const { text } = (await req.json()) as { text: string }
+    const { text, prompt: writingPrompt } = (await req.json()) as { text: string; prompt?: string }
 
     if (!text?.trim()) {
       return new Response('Text required', { status: 400 })
@@ -54,6 +55,20 @@ Instructions:
 
 If the text has no errors, return an empty errors array and a high score.`,
     })
+
+    // Guardar en writing_submissions (fire-and-forget, no bloquea la respuesta)
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      supabase.from('writing_submissions').insert({
+        user_id: user.id,
+        prompt: writingPrompt ?? null,
+        user_text: text.trim(),
+        ai_feedback: object.summary,
+        corrected_text: object.correctedText,
+        score: object.overallScore,
+      }).then(() => {})
+    }
 
     return new Response(JSON.stringify(object), {
       headers: { 'Content-Type': 'application/json' },
