@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { authFailureMessage, createAuthClient } from '@/lib/auth/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -14,11 +14,19 @@ export default function SignupPage() {
   const router = useRouter()
 
   async function handleGoogleLogin() {
-    const supabase = createClient()
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${location.origin}/auth/callback` },
-    })
+    setLoading(true)
+    setError(null)
+    try {
+      const { error } = await createAuthClient().auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${location.origin}/auth/callback` },
+      })
+      if (error) setError('No pudimos iniciar el acceso con Google. Inténtalo de nuevo.')
+    } catch (error) {
+      setError(authFailureMessage(error, 'No pudimos iniciar el acceso con Google. Inténtalo de nuevo.'))
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleSignup(e: React.FormEvent) {
@@ -26,23 +34,27 @@ export default function SignupPage() {
     setLoading(true)
     setError(null)
 
-    const supabase = createClient()
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${location.origin}/dashboard`,
-      },
-    })
-
-    if (error) {
-      setError(error.message)
+    try {
+      const { data, error } = await createAuthClient().auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: `${location.origin}/auth/callback` },
+      })
+      if (error) {
+        setError(error.message)
+        return
+      }
+      if (data.session) {
+        router.push('/dashboard')
+        router.refresh()
+        return
+      }
+      setSuccess(true)
+    } catch (error) {
+      setError(authFailureMessage(error, 'No pudimos crear tu cuenta. Inténtalo de nuevo.'))
+    } finally {
       setLoading(false)
-      return
     }
-
-    setSuccess(true)
-    setLoading(false)
   }
 
   if (success) {
@@ -77,6 +89,7 @@ export default function SignupPage() {
       <button
         type="button"
         onClick={handleGoogleLogin}
+        disabled={loading}
         className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors text-white/80 text-sm font-medium"
       >
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -96,8 +109,10 @@ export default function SignupPage() {
 
       <form onSubmit={handleSignup} className="space-y-4">
         <div>
-          <label className="block text-sm text-white/60 mb-1.5">Email</label>
+          <label htmlFor="email" className="block text-sm text-white/60 mb-1.5">Email</label>
           <input
+            id="email"
+            autoComplete="email"
             type="email"
             value={email}
             onChange={e => setEmail(e.target.value)}
@@ -108,8 +123,10 @@ export default function SignupPage() {
         </div>
 
         <div>
-          <label className="block text-sm text-white/60 mb-1.5">Contraseña</label>
+          <label htmlFor="password" className="block text-sm text-white/60 mb-1.5">Contraseña</label>
           <input
+            id="password"
+            autoComplete="new-password"
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
@@ -121,7 +138,7 @@ export default function SignupPage() {
         </div>
 
         {error && (
-          <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+          <p role="alert" className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
             {error}
           </p>
         )}

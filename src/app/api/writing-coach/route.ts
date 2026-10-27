@@ -25,11 +25,14 @@ export type WritingFeedback = z.infer<typeof CorrectionSchema>
 
 export async function POST(req: Request) {
   try {
-    const { text, prompt: writingPrompt } = (await req.json()) as { text: string; prompt?: string }
-
-    if (!text?.trim()) {
-      return new Response('Text required', { status: 400 })
-    }
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return Response.json({ error: 'Inicia sesión para practicar.' }, { status: 401 })
+    const { text, prompt: writingPrompt } = z.object({
+      text: z.string().trim().min(1).max(6000),
+      prompt: z.string().trim().max(1000).optional(),
+    }).parse(await req.json())
+    if (!process.env.GROQ_API_KEY) return Response.json({ error: 'El tutor no está configurado.' }, { status: 503 })
 
     const { object } = await generateObject({
       model: groq('llama-3.3-70b-versatile'),
@@ -56,24 +59,21 @@ Instructions:
 If the text has no errors, return an empty errors array and a high score.`,
     })
 
-    // Guardar en writing_submissions (fire-and-forget, no bloquea la respuesta)
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      supabase.from('writing_submissions').insert({
+    const { error: saveError } = await supabase.from('writing_submissions').insert({
         user_id: user.id,
-        prompt: writingPrompt ?? null,
+        prompt: writingPrompt || 'Escritura libre',
         user_text: text.trim(),
         ai_feedback: object.summary,
         corrected_text: object.correctedText,
         score: object.overallScore,
-      }).then(() => {})
-    }
+      })
+    if (saveError) throw saveError
 
     return new Response(JSON.stringify(object), {
       headers: { 'Content-Type': 'application/json' },
     })
   } catch (error) {
+    if (error instanceof z.ZodError || error instanceof SyntaxError) return Response.json({ error: 'Envía un texto válido de hasta 6000 caracteres.' }, { status: 400 })
     console.error('writing-coach error:', error)
     return new Response(JSON.stringify({ error: 'Error al analizar el texto' }), {
       status: 500,

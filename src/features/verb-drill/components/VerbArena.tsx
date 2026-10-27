@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { VERBS, DRILLS, type VerbDrill } from '../data/verbs'
-import { createClient } from '@/lib/supabase/client'
+import { useSessionAnalysis } from '@/features/tutor/hooks/useSessionAnalysis'
+import SessionFeedback from '@/features/tutor/components/SessionFeedback'
 
 type Phase = 'gallery' | 'drill' | 'done'
 
@@ -25,29 +26,17 @@ export default function VerbArena() {
   const [selected, setSelected] = useState<number | null>(null)
   const [showFeedback, setShowFeedback] = useState(false)
   const [drillAnswers, setDrillAnswers] = useState<{ q: string; verb: string; ok: boolean; answer: string }[]>([])
-  const [sessionFired, setSessionFired] = useState(false)
+  const session = useSessionAnalysis('verb_drill')
 
-  useEffect(() => {
-    if (phase !== 'done' || sessionFired || drillAnswers.length === 0) return
-    setSessionFired(true)
-    const xp = Math.round((score / drillAnswers.length) * 60)
-    const supabase = createClient()
-    supabase.rpc('increment_xp', { xp_amount: xp }).then(() => {})
-    const transcript = [
-      { role: 'assistant' as const, content: 'Verb drill session — 16 Ghio base verbs.' },
-      ...drillAnswers.flatMap(a => [
-        { role: 'assistant' as const, content: a.q },
-        { role: 'user' as const, content: a.ok ? `[correct] "${a.answer}"` : `[incorrect] Correct: "${a.answer}"` },
+  async function savePractice() {
+    await session.save([
+      { id: 'intro', role: 'assistant', parts: [{type:'text',text:'Verb drill session.'}] },
+      ...drillAnswers.flatMap((a, i) => [
+        { id: `q-${i}`, role: 'assistant' as const, parts: [{type:'text' as const,text:a.q}] },
+        { id: `a-${i}`, role: 'user' as const, parts: [{type:'text' as const,text:a.answer}] },
       ]),
-    ]
-    if (transcript.length >= 3) {
-      fetch('/api/analyze-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript, session_id: `verb-drill-${Date.now()}` }),
-      }).catch(() => {})
-    }
-  }, [phase, sessionFired, score, drillAnswers])
+    ])
+  }
 
   const current = drills[idx]
   const verbInfo = VERBS.find(v => v.base === current?.verbBase)
@@ -55,19 +44,21 @@ export default function VerbArena() {
   function toggleFlip(base: string) {
     setFlipped(prev => {
       const next = new Set(prev)
-      next.has(base) ? next.delete(base) : next.add(base)
+      if (next.has(base)) next.delete(base)
+      else next.add(base)
       return next
     })
   }
 
   function startDrill() {
+    if (session.saving) return
+    session.reset()
     setDrills(shuffle(DRILLS))
     setIdx(0)
     setScore(0)
     setSelected(null)
     setShowFeedback(false)
     setDrillAnswers([])
-    setSessionFired(false)
     setPhase('drill')
   }
 
@@ -77,7 +68,7 @@ export default function VerbArena() {
     if (i === current.correct) setScore(s => s + 1)
     setDrillAnswers(prev => [
       ...prev,
-      { q: current.question, verb: current.verbBase, ok: i === current.correct, answer: current.options[current.correct] },
+      { q: current.question, verb: current.verbBase, ok: i === current.correct, answer: current.options[i] },
     ])
     setTimeout(() => setShowFeedback(true), 300)
   }
@@ -290,11 +281,14 @@ export default function VerbArena() {
         </div>
       </div>
 
+      {session.error && <p role="alert" className="text-red-300">{session.error}</p>}
+      <SessionFeedback feedback={session.feedback} />
+      {!session.done && <button className="btn-primary" disabled={session.saving} onClick={savePractice}>{session.saving ? 'Guardando…' : 'Guardar análisis de práctica'}</button>}
       <div className="flex gap-3 w-full max-w-xs">
-        <button onClick={() => setPhase('gallery')} className="btn-ghost flex-1">
+        <button disabled={session.saving} onClick={() => setPhase('gallery')} className="btn-ghost flex-1">
           Ver verbos
         </button>
-        <button onClick={startDrill} className="btn-primary flex-1">
+        <button onClick={() => window.location.reload()} className="btn-primary flex-1">
           Repetir ⚡
         </button>
       </div>

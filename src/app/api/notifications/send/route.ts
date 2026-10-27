@@ -1,74 +1,59 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { NextResponse } from 'next/server'
 import webpush from 'web-push'
+import { z } from 'zod'
+import { configureWebPush, getAdminClient, isExpiredSubscription } from '../_shared'
 
-function getSupabaseAdmin() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
+const localPath = z.string().max(2048).refine(value => value.startsWith('/') && !value.startsWith('//') && !value.includes('\\'), 'Expected a local path')
+const SendSchema = z.object({
+  userId: z.uuid(),
+  notification: z.object({
+    title: z.string().trim().min(1).max(160),
+    body: z.string().max(1000).optional(),
+    icon: localPath.optional(),
+    data: z.object({ url: localPath.optional() }).optional(),
+  }),
+})
 
-function initWebpush() {
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:noreply@example.com',
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-    process.env.VAPID_PRIVATE_KEY!
-  )
-}
-
-export async function POST(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`) {
+export async function POST(request: Request) {
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  if (!secret) return NextResponse.json({ error: 'Notifications not configured' }, { status: 503 })
+  if (request.headers.get('authorization') !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
-    initWebpush()
-    const supabaseAdmin = getSupabaseAdmin()
+    const { userId, notification } = SendSchema.parse(await request.json())
+    const admin = getAdminClient()
+    if (!admin || !configureWebPush()) return NextResponse.json({ error: 'Notifications not configured' }, { status: 503 })
 
-    const { userId, notification } = await request.json() as {
-      userId: string
-      notification: { title: string; body?: string; icon?: string; data?: Record<string, unknown> }
-    }
-
-    const { data: subscriptions } = await supabaseAdmin
-      .from('push_subscriptions')
-      .select('*')
-      .eq('user_id', userId)
-
-    if (!subscriptions?.length) {
-      return NextResponse.json({ success: true, sent: 0 })
-    }
+    const { data: subscriptions, error } = await admin.from('push_subscriptions')
+      .select('id, endpoint, p256dh, auth').eq('user_id', userId)
+    if (error) throw new Error('Subscription lookup failed')
 
     let sent = 0
     let failed = 0
-
-    for (const sub of subscriptions) {
+    for (const sub of subscriptions ?? []) {
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          JSON.stringify(notification)
+          JSON.stringify(notification),
         )
-        await supabaseAdmin
-          .from('push_subscriptions')
-          .update({ last_used_at: new Date().toISOString() })
-          .eq('id', sub.id)
-        sent++
-      } catch (err) {
-        const status = (err as { statusCode?: number }).statusCode
-        // 4xx = suscripción inválida → eliminar (excepto 429 rate limit)
-        // Apple falla silenciosamente (sin statusCode) → también eliminar
-        if (!status || (status >= 400 && status < 500 && status !== 429)) {
-          await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id)
+      } catch (deliveryError) {
+        if (isExpiredSubscription(deliveryError)) {
+          const { error: deleteError } = await admin.from('push_subscriptions').delete().eq('id', sub.id)
+          if (deleteError) throw new Error('Expired subscription removal failed')
         }
         failed++
+        continue
       }
+      const { error: updateError } = await admin.from('push_subscriptions')
+        .update({ last_used_at: new Date().toISOString() }).eq('id', sub.id)
+      if (updateError) throw new Error('Subscription timestamp update failed')
+      sent++
     }
-
     return NextResponse.json({ success: true, sent, failed })
   } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    const invalid = error instanceof z.ZodError || error instanceof SyntaxError
+    return NextResponse.json({ error: invalid ? 'Invalid notification' : 'Could not send notifications' }, { status: invalid ? 400 : 500 })
   }
 }

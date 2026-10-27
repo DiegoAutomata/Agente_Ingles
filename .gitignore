@@ -3,7 +3,6 @@
 /.pnp
 .pnp.js
 yarn.lock
-package-lock.json
 pnpm-lock.yaml
 
 # Testing
@@ -64,3 +63,8 @@ Thumbs.db
 # Supabase
 supabase/.branches
 supabase/.temp
+
+# Local verification output
+playwright-report/
+test-results/
+*.tsbuildinfo

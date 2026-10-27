@@ -1,170 +1,61 @@
-# SaaS Factory V4
+# Agente Inglés — Alex
 
-Template production-ready para crear aplicaciones SaaS con desarrollo asistido por IA. Filosofia Agent-First: el usuario dice que quiere, el agente construye todo.
+Aplicación de práctica de inglés para hispanohablantes. Next.js 16, React 19, Supabase y Groq. Lecciones progresivas por seis ligas, los 16 verbos básicos, vocabulario con repetición espaciada, conversación por texto/voz y corrección de escritura.
 
-## Que incluye
+## Arranque local
 
-- Next.js 16 (App Router) + TypeScript
-- Supabase (Database + Auth + RLS)
-- Tailwind CSS + shadcn/ui
-- 19 Skills de Claude Code (V4 Skills 2.0)
-- Playwright CLI para QA automatizado
-- AI Templates (Vercel AI SDK v5 + OpenRouter)
-- 5 Design Systems listos para usar
-- Arquitectura Feature-First optimizada para IA
-- Auto-Blindaje: el sistema aprende de cada error
-
-## Quick Start
-
-### 1. Instalar
+Requiere Node.js 24 LTS y npm. En WSL:
 
 ```bash
-npm install
-```
-
-### 2. Variables de Entorno
-
-```bash
-cp .env.example .env.local
-# Editar con credenciales de Supabase
-```
-
-### 3. MCPs (Opcional)
-
-```bash
-cp .claude/example.mcp.json .mcp.json
-# Editar con project ref de Supabase
-```
-
-### 4. Desarrollar
-
-```bash
+npm ci
+cp .env.local.example .env.local
+# Configurar Supabase y Groq en el archivo local (sin versionarlo).
 npm run dev
-# Auto-detecta puerto disponible (3000-3006)
 ```
 
-## Tech Stack
+Sin Supabase las rutas privadas redirigen a login con aviso de configuración; no se simula una cuenta. Sin Groq las funciones de IA devuelven un error recuperable. Lecciones, verbos, puzzle y vocabulario no necesitan IA para sus ejercicios.
 
-```yaml
-Runtime: Node.js + TypeScript
-Framework: Next.js 16 (App Router)
-Database: PostgreSQL/Supabase
-Styling: Tailwind CSS 3.4
-Components: shadcn/ui
-State: Zustand
-Validation: Zod
-AI Engine: Vercel AI SDK v5 + OpenRouter
-Testing: Playwright CLI + MCP
-Deploy: Vercel
-```
+## Base de datos y autenticación
 
-## Arquitectura Feature-First
+En un proyecto nuevo, aplicar `supabase/migrations/001_initial_schema.sql` a `007_atomic_srs.sql` en orden. En un proyecto existente que ya tiene 001–004, aplicar solamente 005, 006 y 007. Usar un rol administrador para migraciones; no ejecutar nuevamente el seed inicial en producción.
 
-```
-src/
-├── app/                      # Next.js App Router
-│   ├── (auth)/              # Rutas auth
-│   ├── (main)/              # Rutas principales
-│   └── layout.tsx
-│
-├── features/                 # Organizadas por funcionalidad
-│   └── [feature]/
-│       ├── components/
-│       ├── hooks/
-│       ├── services/
-│       ├── types/
-│       └── store/
-│
-└── shared/                   # Codigo reutilizable
-    ├── components/
-    ├── hooks/
-    ├── lib/
-    └── types/
-```
+- 005: progreso/XP transaccional e idempotente, eliminación de RPC/escrituras arbitrarias y análisis de sesión atómico.
+- 006: tabla y permisos de suscripciones push.
+- 007: repaso SRS transaccional, serializado por alumno para evitar pérdida de actualizaciones entre pestañas.
 
-## Skills (19 total)
+En Supabase Auth, configurar Site URL y Redirect URLs para el dominio del despliegue y `http://localhost:3000/auth/callback` durante desarrollo. La confirmación y recuperación regresan a `/auth/callback`; la recuperación continúa en `/update-password`. Habilitar Google y sus credenciales sólo si se usa ese proveedor. Verificar entrega de emails con una cuenta de prueba autorizada antes de publicar.
 
-### Para el usuario
+El seed actual contiene 16 entradas de vocabulario, no el diccionario completo de 850 palabras. Las lecciones contienen otros ejemplos; ampliar el mazo es contenido futuro y no se anuncia como entregado.
 
-| Skill | Que hace |
-|-------|----------|
-| `/new-app` | Entrevista de negocio → BUSINESS_LOGIC.md |
-| `/landing` | Landing page de alta conversion |
-| `/add-login` | Auth completo (Email + Google OAuth + profiles + RLS) |
-| `/bucle-agentico` | Implementar features complejas por fases |
-| `/sprint` | Tareas rapidas sin planificacion |
-| `/prp` | Planificar features complejas antes de implementar |
-| `/ai [template]` | Agregar IA: chat, RAG, vision, tools |
-| `/qa` | QA automatizado con Playwright CLI |
-| `/primer` | Inicializar contexto del proyecto |
-| `/update-sf` | Actualizar a ultima version |
-| `/eject-sf` | Remover SaaS Factory (destructivo) |
-| `/skill-creator` | Crear nuevos skills |
+## Progreso
 
-### Automaticos (Claude los activa segun la tarea)
+El perfil autenticado del servidor define liga/nivel. Finalizar una lección guarda avance y 100 XP juntos, una sola vez para esa liga/lección. Un desafío completo da 160 XP una vez por día UTC, sin avanzar la liga. Repetir permite practicar pero no vuelve a dar esa recompensa. La precisión se muestra aparte del XP. Los repasos y análisis no aceptan XP desde el navegador.
 
-backend, frontend, supabase-admin, codebase-analyst, vercel-deployer, documentacion, calidad
+La recompensa indica actividad completada, no certificación de conocimientos. Como los ejercicios están disponibles al cliente, el MVP no es un sistema de evaluación contra trampas ni una certificación B2.
 
-## AI Templates
-
-Bloques LEGO para construir features de IA con Vercel AI SDK v5 + OpenRouter:
-
-| Template | Que hace |
-|----------|----------|
-| setup-base | Configuracion inicial |
-| chat | Chat streaming con useChat |
-| web-search | Busqueda con :online |
-| historial | Persistencia en Supabase |
-| vision | Analisis de imagenes |
-| tools | Funciones/herramientas |
-| rag | pgvector + embeddings |
-| single-call | generateText() puntual |
-| structured-outputs | generateObject() con Zod |
-| generative-ui | LLM decide que componente renderizar |
-
-## Design Systems
-
-5 sistemas visuales listos en `.claude/design-systems/`:
-
-- **Liquid Glass** - iOS-like, transparencias
-- **Gradient Mesh** - Degradados fluidos
-- **Neumorphism** - Soft UI, sombras suaves
-- **Bento Grid** - Grids asimetricos
-- **Neobrutalism** - Bold, bordes duros
-
-## Comandos
+## Verificación reproducible
 
 ```bash
-npm run dev          # Desarrollo (auto-port 3000-3006)
-npm run build        # Build produccion
-npm run typecheck    # TypeScript check
-npm run lint         # ESLint
+npm run typecheck
+npm run lint
+npm test
+npm run build
+npx playwright install chromium
+npm run test:e2e
 ```
 
-## Deploy
+`tests/` cubre contratos HTTP, recuperación/auth, guardados fallidos, aislamiento de cuentas, vidas, reintentos y transacciones SQL. PGlite ejecuta las migraciones con roles/RLS locales; no equivale a probar Supabase alojado ni un bloqueo con dos conexiones PostgreSQL independientes.
 
-```bash
-# Vercel (recomendado)
-npm install -g vercel
-vercel
-```
+`npm run test:e2e` inicia un backend HTTP de fixture en loopback 54321, ejecuta las migraciones con PGlite y levanta la app en 3100. Chromium usa el SDK real de Supabase contra ese fixture. Sólo tiene usuarios `@test.local` y una clave ficticia. No consume Groq, no envía correos ni push y no modifica servicios externos. Los datos son efímeros. El informe queda en `test-results/report/index.html`.
 
-Variables en Vercel Dashboard:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+## Evaluación manual sin servicios alojados
 
-## Estructura .claude/
+`npm run preview:local` inicia la app con el mismo fixture aislado de los tests. Abrir http://127.0.0.1:3100 e ingresar con `learner-a@test.local` / `Fixture-Only-123!` (segunda cuenta: `learner-b@test.local`). Una franja identifica los datos de prueba y las funciones reales desactivadas. Los datos se reinician al detener y volver a iniciar el fixture. Los puertos3100 y54321 deben estar libres. Detener con Ctrl+C. No reemplaza la validación de proveedores reales.
 
-```
-.claude/
-├── skills/              # 19 Skills (V4 Skills 2.0)
-├── PRPs/                # Product Requirements Proposals
-│   │   └── references/  # AI Templates (11 bloques)
-├── design-systems/      # 5 sistemas de diseno
-├── hooks/               # Scripts en eventos
-└── example.mcp.json     # Config de MCPs
-```
+## Recordatorios opcionales
 
----
+Sin VAPID o usuario autenticado el prompt se oculta. Para habilitarlo, configurar las variables opcionales de `.env.local.example` y el cron de Vercel. `CRON_SECRET` protege el cron; no usar una service-role key en el navegador. La migración 006 debe estar aplicada. El cierre de sesión desvincula el dispositivo.
 
-**SaaS Factory V4** | Agent-First. Todo es un Skill.
+## Estado de la entrega
+
+Ver `docs/mvp-audit.md` para alcance, hallazgos y evidencia. No se ha publicado esta reparación ni modificado la base alojada. La escucha visual investigada anteriormente es una evolución de producto; no forma parte de la reparación del MVP existente. Pagos y marketing transaccional no son necesarios para esta beta gratuita.

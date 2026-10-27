@@ -1,5 +1,8 @@
 'use client'
 
+import { useSessionAnalysis } from '../hooks/useSessionAnalysis'
+import SessionFeedback from './SessionFeedback'
+
 import { useEffect, useRef, useState, ReactElement } from 'react'
 import { UIMessage } from 'ai'
 import { useVoiceConversation, ConversationPhase } from '../hooks/useVoiceConversation'
@@ -98,24 +101,15 @@ interface VoiceConversationProps {
 export default function VoiceConversation({ mode = 'voice_conversation', initialMessage }: VoiceConversationProps) {
   const [mounted, setMounted] = useState(false)
   const [showTranscript, setShowTranscript] = useState(false)
-  const [analyzingSession, setAnalyzingSession] = useState(false)
-  const [sessionDone, setSessionDone] = useState(false)
+  const session = useSessionAnalysis(mode === 'voice_conversation' ? 'conversation' : mode)
+  const analyzingSession = session.saving
+  const sessionDone = session.done
   const transcriptEndRef = useRef<HTMLDivElement>(null)
 
   async function handleEndSession(msgs: UIMessage[]) {
-    if (msgs.length < 3 || analyzingSession) return
-    setAnalyzingSession(true)
-    const transcript = msgs.map(m => ({ role: m.role, content: getMessageText(m) }))
-    try {
-      await fetch('/api/analyze-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript, session_id: `voice-${Date.now()}` }),
-      })
-    } catch { /* offline */ } finally {
-      setAnalyzingSession(false)
-      setSessionDone(true)
-    }
+    if (msgs.length < 3 || isLoading) return
+    pauseConversation()
+    await session.save(msgs)
   }
 
   useEffect(() => { setMounted(true) }, [])
@@ -133,14 +127,6 @@ export default function VoiceConversation({ mode = 'voice_conversation', initial
     forceMicTurn,
     pauseConversation,
   } = useVoiceConversation(mode)
-
-  // Auto-iniciar cuando el browser está listo
-  useEffect(() => {
-    if (!mounted || !ttsSupported || hasStarted) return
-    const msg = initialMessage ?? 'Hola, soy Alex, tu tutor de inglés. Vamos a practicar conversación. Te hablo en español para que entiendas todo, pero vos respondeme en inglés. ¿Listo? Empecemos. Contame: ¿a qué te dedicás?'
-    const t = setTimeout(() => startConversation(msg), 900)
-    return () => clearTimeout(t)
-  }, [mounted, ttsSupported, hasStarted, initialMessage, startConversation])
 
   // Auto-scroll transcript
   useEffect(() => {
@@ -169,7 +155,7 @@ export default function VoiceConversation({ mode = 'voice_conversation', initial
           {hasStarted && messages.length >= 3 && !sessionDone && (
             <button
               onClick={() => handleEndSession(messages)}
-              disabled={analyzingSession}
+              disabled={analyzingSession || isLoading}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-all bg-green-500/15 text-green-300 border border-green-500/20 hover:bg-green-500/25 disabled:opacity-50"
             >
               {analyzingSession ? '⏳ Analizando…' : '✅ Terminar'}
@@ -194,6 +180,8 @@ export default function VoiceConversation({ mode = 'voice_conversation', initial
       </div>
 
 
+      {session.error && <p role="alert" className="p-3 text-red-300">{session.error}</p>}
+      <SessionFeedback feedback={session.feedback} />
       {/* Zona central: avatar + estado */}
       <div className="flex-1 flex flex-col items-center justify-center gap-6 py-8">
         <AlexAvatar phase={phase} />
@@ -240,7 +228,7 @@ export default function VoiceConversation({ mode = 'voice_conversation', initial
       <div className="px-5 pb-5 space-y-4">
 
         {/* Botones de control — solo si inició */}
-        {hasStarted && (
+        {hasStarted && !sessionDone && (
           <div className="flex items-center justify-center gap-4">
             {/* Forzar turno mic */}
             <button
@@ -263,7 +251,7 @@ export default function VoiceConversation({ mode = 'voice_conversation', initial
             <button
               onClick={() => {
                 if (phase === 'idle') {
-                  startConversation('¿Continuamos? Cuando quieras, seguimos con la práctica.')
+                  startConversation('Shall we continue? Tell me about your day.')
                 } else {
                   pauseConversation()
                 }

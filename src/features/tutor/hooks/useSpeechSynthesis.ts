@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 
 interface UseSpeechSynthesisOptions {
   lang?: string
@@ -44,8 +44,7 @@ export function useSpeechSynthesis({
     const preferredVoice =
       voices.find(v => v.lang === lang) ||
       voices.find(v => v.lang.startsWith(langPrefix)) ||
-      voices.find(v => v.default) ||
-      voices[0]
+      undefined
 
     if (preferredVoice) {
       utterance.voice = preferredVoice
@@ -66,6 +65,10 @@ export function useSpeechSynthesis({
     window.speechSynthesis.cancel()
     setIsSpeaking(false)
   }, [isSupported])
+
+  useEffect(() => () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel()
+  }, [])
 
   return {
     isSpeaking,

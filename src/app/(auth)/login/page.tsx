@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useEffect, useState } from 'react'
+import { authFailureMessage, createAuthClient } from '@/lib/auth/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -12,12 +12,30 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('error')
+    const messages: Record<string, string> = {
+      auth_callback_failed: 'El enlace de acceso venció o no es válido. Solicita uno nuevo o vuelve a entrar.',
+      auth_not_configured: 'Falta configurar Supabase para habilitar el acceso.',
+      auth_unavailable: 'No pudimos conectar con el servicio de acceso. Inténtalo de nuevo.',
+    }
+    if (code && messages[code]) setError(messages[code])
+  }, [])
+
   async function handleGoogleLogin() {
-    const supabase = createClient()
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${location.origin}/auth/callback` },
-    })
+    setLoading(true)
+    setError(null)
+    try {
+      const { error } = await createAuthClient().auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${location.origin}/auth/callback` },
+      })
+      if (error) setError('No pudimos iniciar el acceso con Google. Inténtalo de nuevo.')
+    } catch (error) {
+      setError(authFailureMessage(error, 'No pudimos iniciar el acceso con Google. Inténtalo de nuevo.'))
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleLogin(e: React.FormEvent) {
@@ -25,17 +43,19 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-
-    if (error) {
-      setError('Email o contraseña incorrectos.')
+    try {
+      const { error } = await createAuthClient().auth.signInWithPassword({ email, password })
+      if (error) {
+        setError('Email o contraseña incorrectos. Si no confirmaste tu cuenta, revisa tu email.')
+        return
+      }
+      router.push('/dashboard')
+      router.refresh()
+    } catch (error) {
+      setError(authFailureMessage(error, 'No pudimos iniciar sesión. Inténtalo de nuevo.'))
+    } finally {
       setLoading(false)
-      return
     }
-
-    router.push('/dashboard')
-    router.refresh()
   }
 
   return (
@@ -52,6 +72,7 @@ export default function LoginPage() {
       <button
         type="button"
         onClick={handleGoogleLogin}
+        disabled={loading}
         className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors text-white/80 text-sm font-medium"
       >
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -71,8 +92,10 @@ export default function LoginPage() {
 
       <form onSubmit={handleLogin} className="space-y-4">
         <div>
-          <label className="block text-sm text-white/60 mb-1.5">Email</label>
+          <label htmlFor="email" className="block text-sm text-white/60 mb-1.5">Email</label>
           <input
+            id="email"
+            autoComplete="email"
             type="email"
             value={email}
             onChange={e => setEmail(e.target.value)}
@@ -83,8 +106,10 @@ export default function LoginPage() {
         </div>
 
         <div>
-          <label className="block text-sm text-white/60 mb-1.5">Contraseña</label>
+          <label htmlFor="password" className="block text-sm text-white/60 mb-1.5">Contraseña</label>
           <input
+            id="password"
+            autoComplete="current-password"
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
@@ -95,7 +120,7 @@ export default function LoginPage() {
         </div>
 
         {error && (
-          <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+          <p role="alert" className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
             {error}
           </p>
         )}
@@ -108,6 +133,10 @@ export default function LoginPage() {
           {loading ? 'Entrando...' : 'Entrar'}
         </button>
       </form>
+
+      <Link href="/forgot-password" className="block text-center text-sm text-violet-400 hover:text-violet-300 mt-4">
+        ¿Olvidaste tu contraseña?
+      </Link>
 
       <p className="text-center text-sm text-white/40 mt-6">
         ¿No tienes cuenta?{' '}

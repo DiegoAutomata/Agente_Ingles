@@ -32,15 +32,14 @@ export default async function DashboardPage() {
     userEmail = user.email ?? null
 
     const [profileRes, learnerRes] = await Promise.all([
-      supabase.from('user_profiles').select('ghio_lesson, module, xp, streak, last_session_at, league').eq('id', user.id).single(),
+      supabase.from('user_profiles').select('ghio_lesson, module, xp, streak, last_session_at, league, ghio_lesson_completed').eq('id', user.id).single(),
       supabase.from('learner_profile').select('profile_json').eq('user_id', user.id).single(),
     ])
 
+    for (const result of [profileRes, learnerRes]) if (result.error) throw result.error
     profile = profileRes.data
     learnerProfile = learnerRes.data?.profile_json as Record<string, unknown> | null
-  } catch {
-    // Supabase no configurado — muestra el dashboard sin datos reales
-  }
+  } catch (error) { throw error }
 
   const currentLesson = profile?.ghio_lesson ?? 1
   const xp = profile?.xp ?? 0
@@ -51,7 +50,7 @@ export default async function DashboardPage() {
   const weaknesses = (learnerProfile?.weaknesses as string[]) ?? []
   const lastWeekSummary = learnerProfile?.last_week_summary as string | null
 
-  const lessonProgress = ((currentLesson - 1) / maxLevels) * 100
+  const lessonProgress = (profile?.ghio_lesson_completed ? 100 : ((currentLesson - 1) / maxLevels) * 100)
 
   // Lección actual (para Bronce usa GHIO_LESSONS, otras ligas muestran "Nivel N")
   const currentLessonTitle = leagueId === 'bronce'
@@ -143,7 +142,7 @@ export default async function DashboardPage() {
 
         <div className="mt-4">
           <Link href="/lesson" className="btn-primary text-sm py-2.5 px-4 inline-flex">
-            📚 Continuar L{currentLesson}: {currentLessonTitle}
+            {profile?.ghio_lesson_completed ? 'Repasar última lección' : `📚 Continuar L${currentLesson}: ${currentLessonTitle}`}
           </Link>
         </div>
       </div>
@@ -158,7 +157,7 @@ export default async function DashboardPage() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5">
               <p className="font-semibold text-white">Desafío</p>
-              <span className="badge badge-yellow">2× XP</span>
+              <span className="badge badge-yellow">160 XP diarios</span>
             </div>
             <p className="text-sm text-white/50">3 vidas · error = pierdes una · se recargan en 4h</p>
           </div>

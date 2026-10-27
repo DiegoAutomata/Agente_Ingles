@@ -9,27 +9,40 @@ interface Props {
 }
 
 export function PushNotificationPrompt({ userId, autoShowDelay = 5000 }: Props) {
-  const { isSupported, permission, isSubscribed, subscribe } = usePushSubscription(userId)
+  const { isSupported, permission, isSubscribed, loading, error, subscribe } = usePushSubscription(userId)
   const [show, setShow] = useState(false)
+  const configured = !!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim()
+
+  useEffect(() => { setShow(false) }, [userId])
 
   useEffect(() => {
-    if (!isSupported || isSubscribed || permission === 'denied') return
-    const dismissed = localStorage.getItem('push-prompt-dismissed')
-    if (dismissed) return
+    if (!userId || !configured || !isSupported || isSubscribed || permission === 'denied') {
+      setShow(false)
+      return
+    }
+    if (loading) return
+    if (error) {
+      setShow(true)
+      return
+    }
+    try {
+      if (localStorage.getItem(`push-prompt-dismissed:${userId}`) && !error) return
+    } catch { /* Storage may be disabled; activation still works. */ }
     const timer = setTimeout(() => setShow(true), autoShowDelay)
     return () => clearTimeout(timer)
-  }, [isSupported, isSubscribed, permission, autoShowDelay])
+  }, [userId, configured, isSupported, isSubscribed, loading, permission, error, autoShowDelay])
 
-  if (!show) return null
+  if (!userId || !configured || !show || isSubscribed) return null
 
   async function handleEnable() {
-    localStorage.setItem('push-prompt-dismissed', 'true')
-    await subscribe()
-    setShow(false)
+    if (await subscribe()) {
+      try { localStorage.setItem(`push-prompt-dismissed:${userId}`, 'true') } catch { /* optional */ }
+      setShow(false)
+    }
   }
 
   function handleDismiss() {
-    localStorage.setItem('push-prompt-dismissed', 'true')
+    try { localStorage.setItem(`push-prompt-dismissed:${userId}`, 'true') } catch { /* optional */ }
     setShow(false)
   }
 
@@ -44,17 +57,14 @@ export function PushNotificationPrompt({ userId, autoShowDelay = 5000 }: Props) 
           </p>
         </div>
       </div>
+      {error && <p role="alert" className="text-xs text-red-300">{error}</p>}
       <div className="flex gap-2">
-        <button
-          onClick={handleEnable}
-          className="flex-1 py-2 text-xs font-semibold bg-violet-600 hover:bg-violet-500 text-white rounded-xl transition-colors"
-        >
-          Activar
+        <button onClick={handleEnable} disabled={loading}
+          className="flex-1 py-2 text-xs font-semibold bg-violet-600 hover:bg-violet-500 text-white rounded-xl transition-colors disabled:opacity-50">
+          {loading ? 'Guardando…' : 'Activar'}
         </button>
-        <button
-          onClick={handleDismiss}
-          className="px-3 py-2 text-xs text-white/40 hover:text-white/60 transition-colors"
-        >
+        <button onClick={handleDismiss} disabled={loading}
+          className="px-3 py-2 text-xs text-white/40 hover:text-white/60 transition-colors">
           Ahora no
         </button>
       </div>

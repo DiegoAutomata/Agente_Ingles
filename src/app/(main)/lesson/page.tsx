@@ -5,23 +5,24 @@ import { redirect } from 'next/navigation'
 export default async function LessonPage() {
   let lesson = 1
   let league = 'bronce'
+  let userId: string | undefined
 
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) redirect('/login')
+    userId = user.id
 
-    const { data: profile } = await supabase
+    const { data: profile, error } = await supabase
       .from('user_profiles')
       .select('ghio_lesson, league')
       .eq('id', user.id)
       .single()
 
+    if (error) throw error
     lesson = profile?.ghio_lesson ?? 1
     league = (profile as { league?: string } | null)?.league ?? 'bronce'
-  } catch {
-    // Supabase no configurado — usa defaults
-  }
+  } catch (error) { throw error }
 
   return (
     <div className="flex flex-col h-screen">
@@ -31,7 +32,7 @@ export default async function LessonPage() {
           <span className="badge badge-purple">Método Ghio</span>
         </div>
       </div>
-      <LessonClient serverLesson={lesson} league={league} mode="lesson" />
+      <LessonClient userId={userId} key={`${league}-${lesson}`} serverLesson={lesson} league={league} mode="lesson" />
     </div>
   )
 }
