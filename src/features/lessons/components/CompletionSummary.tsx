@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import RestartPractice from './RestartPractice'
 import type { Exercise } from '../data/lesson-content'
 
 const TYPE_LABELS: Record<Exercise['type'], string> = {
@@ -79,7 +80,7 @@ export default function CompletionSummary({
         <div className="flex justify-between text-sm">
           <span className="text-white/50">XP ganados</span>
           <span className="font-bold text-yellow-400">
-            +{xpEarned} XP{isChallenge ? ' ×2' : ''}
+            +{xpEarned} XP
           </span>
         </div>
 
@@ -123,12 +124,7 @@ export default function CompletionSummary({
         <Link href="/dashboard" className="btn-ghost flex-1 text-center">
           ← Inicio
         </Link>
-        <Link
-          href={isChallenge ? '/challenge' : '/lesson'}
-          className="btn-primary flex-1 text-center"
-        >
-          {isChallenge ? 'Otro desafío ⚔️' : 'Siguiente lección →'}
-        </Link>
+        <RestartPractice isChallenge={isChallenge} />
       </div>
     </div>
   )

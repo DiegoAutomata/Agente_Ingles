@@ -20,6 +20,7 @@ export function useVoiceConversation(mode = 'voice_conversation') {
   const [interimTranscript, setInterimTranscript] = useState('')
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [hasStarted, setHasStarted] = useState(false)
+  const activeRef = useRef(false)
 
   // Refs para evitar closures stale
   const phaseRef = useRef<ConversationPhase>('idle')
@@ -36,9 +37,10 @@ export function useVoiceConversation(mode = 'voice_conversation') {
     [mode]
   )
 
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, stop, setMessages } = useChat({
     transport,
     onFinish: ({ message }) => {
+      if (!activeRef.current) return
       const text = getMessageText(message)
       if (text) {
         setPhase('alex-speaking')
@@ -47,11 +49,15 @@ export function useVoiceConversation(mode = 'voice_conversation') {
         activateUserTurnRef.current()
       }
     },
+    onError: () => {
+      setVoiceError('Alex no pudo responder. Puedes reintentar o usar Texto y audio.')
+      setPhase('idle')
+    },
   })
 
   // TTS con español (Alex habla principalmente en español)
   const { isSpeaking, speak, stop: stopSpeaking, isSupported: ttsSupported } = useSpeechSynthesis({
-    lang: 'es-ES',
+    lang: 'en-US',
     rate: 0.88,
   })
 
@@ -122,10 +128,12 @@ export function useVoiceConversation(mode = 'voice_conversation') {
   }, [isSpeaking, hasStarted, activateUserTurn])
 
   const startConversation = useCallback((initialMessage: string) => {
+    activeRef.current = true
+    setMessages(previous => previous.length ? previous : [{ id: 'opening', role: 'assistant', parts: [{ type: 'text', text: initialMessage }] }])
     setHasStarted(true)
     setPhase('alex-speaking')
     speakRef.current(initialMessage)
-  }, [])
+  }, [setMessages])
 
   const forceMicTurn = useCallback(() => {
     stopSpeaking()
@@ -134,22 +142,26 @@ export function useVoiceConversation(mode = 'voice_conversation') {
   }, [stopSpeaking, activateUserTurn])
 
   const pauseConversation = useCallback(() => {
+    activeRef.current = false
+    stop()
     stopSpeaking()
     stopListeningRef.current()
     clearTimeout(silenceTimerRef.current ?? undefined)
     clearTimeout(transitionTimerRef.current ?? undefined)
     setPhase('idle')
-  }, [stopSpeaking])
+  }, [stopSpeaking, stop])
 
   // Cleanup al desmontar
   useEffect(() => {
     return () => {
+      activeRef.current = false
+      stop()
       clearTimeout(silenceTimerRef.current ?? undefined)
       clearTimeout(transitionTimerRef.current ?? undefined)
       stopSpeaking()
       stopListeningRef.current()
     }
-  }, [stopSpeaking])
+  }, [stopSpeaking, stop])
 
   return {
     phase,

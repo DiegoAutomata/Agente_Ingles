@@ -36,30 +36,14 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return new Response('Unauthorized', { status: 401 })
 
-    const { transcript, session_id: sessionLabel, mode: modeParam } = await request.json() as {
-      transcript: Array<{ role: string; content: string }>
-      session_id?: string
-      mode?: string
-    }
-
-    if (!transcript || transcript.length < 2) {
-      return new Response(JSON.stringify({ ok: false }), { status: 200 })
-    }
-
+    const { transcript, session_id: sessionLabel, mode: modeParam } = z.object({
+      transcript: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().min(1).max(6000) })).min(2).max(80),
+      session_id: z.string().min(1).max(100),
+      mode: z.enum(['conversation', 'writing', 'lesson', 'verb_drill', 'vocabulary']).optional(),
+    }).parse(await request.json())
+    if (transcript.reduce((n, m) => n + m.content.length, 0) > 40000) return Response.json({ok: false}, {status: 400})
+    if (!process.env.GROQ_API_KEY) return Response.json({ok: false, error: 'Tutor no configurado.'}, {status: 503})
     const mode = modeParam ?? inferMode(sessionLabel)
-
-    // 1. Guardar conversación → obtener UUID real para usar como session_id
-    const { data: convRow } = await supabase
-      .from('conversations')
-      .insert({
-        user_id: user.id,
-        mode,
-        transcript_json: transcript,
-      })
-      .select('id')
-      .single()
-
-    const conversationId: string | null = convRow?.id ?? null
 
     // 2. Obtener perfil actual
     const { data: currentProfile } = await supabase
@@ -89,7 +73,7 @@ SESSION TRANSCRIPT:
 ${transcriptText}
 
 Extract:
-1. Grammar/vocabulary errors the student made (be specific about the pattern)
+1. Grammar/vocabulary errors the student actually made (be specific about the pattern). Never infer pronunciation problems from text; there is no audio available. Only quote real user attempts, never invent mistakes.
 2. Things the student did well
 3. English words/phrases the student used correctly
 4. Words/phrases the student struggled with
@@ -99,59 +83,16 @@ Extract:
 8. One-sentence summary for the student about this week's progress`,
     })
 
-    // 4. Guardar error_log
-    if (analysis.errors.length > 0) {
-      await supabase.from('error_log').insert(
-        analysis.errors.map(err => ({
-          user_id: user.id,
-          session_id: conversationId,
-          error_type: err.type,
-          pattern: err.pattern,
-          context: err.context,
-          user_attempt: err.user_attempt,
-          correct_form: err.correct_form,
-        }))
-      )
-    }
-
-    // 5. Guardar session_analysis usando el UUID de conversations
-    await supabase.from('session_analysis').insert({
-      user_id: user.id,
-      session_id: conversationId,
-      errors_json: analysis.errors,
-      wins_json: analysis.wins,
-      vocabulary_used: analysis.vocabulary_used,
-      ai_notes: analysis.ai_notes,
+    const { error: saveError } = await supabase.rpc('save_session_analysis', {
+      session_label: sessionLabel, session_mode: mode, transcript, analysis,
     })
-
-    // 6. Actualizar learner_profile
-    const sessionCount = ((existingProfile.session_count as number) ?? 0) + 1
-    const updatedProfile = {
-      ...existingProfile,
-      strengths: analysis.updated_strengths,
-      weaknesses: analysis.updated_weaknesses,
-      vocabulary_struggling: [
-        ...((existingProfile.vocabulary_struggling as string[]) ?? []),
-        ...analysis.vocabulary_struggling,
-      ].slice(-20),
-      session_count: sessionCount,
-      last_week_summary: analysis.week_summary,
-      focus_areas: analysis.updated_weaknesses.slice(0, 3),
-    }
-
-    await supabase
-      .from('learner_profile')
-      .update({ profile_json: updatedProfile, updated_at: new Date().toISOString() })
-      .eq('user_id', user.id)
-
-    // 7. XP por sesión completada
-    await supabase.rpc('increment_xp', { user_id_param: user.id, xp_amount: 50 })
-      .then(() => {})
+    if (saveError) throw saveError
 
     return new Response(JSON.stringify({ ok: true, analysis }), {
       headers: { 'Content-Type': 'application/json' },
     })
   } catch (error) {
+    if (error instanceof z.ZodError || error instanceof SyntaxError) return Response.json({ok: false, error: 'Sesión inválida.'}, {status: 400})
     console.error('Session analysis error:', error)
     return new Response(JSON.stringify({ ok: false }), { status: 500 })
   }

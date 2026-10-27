@@ -1,111 +1,60 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
+import { configureWebPush, getAdminClient, isExpiredSubscription } from '../_shared'
 
-// Este endpoint es llamado por el cron de Vercel (vercel.json) a las 18:00 UTC todos los días.
-// También acepta POST con Bearer token para llamadas manuales.
-
-function getSupabaseAdmin() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
-
-function initWebpush() {
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:noreply@example.com',
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-    process.env.VAPID_PRIVATE_KEY!
-  )
-}
-
+// Vercel cron uses CRON_SECRET. A service-role token also supports manual runs
+// when no dedicated cron secret is configured.
 export async function GET(request: Request) {
-  // Vercel cron llama con un header especial — validamos con el service role key
-  const authHeader = request.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET ?? process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (authHeader !== `Bearer ${cronSecret}`) {
+  const secret = process.env.CRON_SECRET?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  if (!secret) return NextResponse.json({ error: 'Notifications not configured' }, { status: 503 })
+  if (request.headers.get('authorization') !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  return runReminder()
-}
-
-export async function POST(request: Request) {
-  const authHeader = request.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET ?? process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  return runReminder()
-}
-
-async function runReminder() {
   try {
-    initWebpush()
-    const supabaseAdmin = getSupabaseAdmin()
+    const admin = getAdminClient()
+    if (!admin || !configureWebPush()) return NextResponse.json({ error: 'Notifications not configured' }, { status: 503 })
+    const { data: usersAtRisk, error: usersError } = await admin.from('user_profiles')
+      .select('id, streak').lt('last_session_at', new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString()).gt('streak', 0)
+    if (usersError) throw new Error('Reminder recipient lookup failed')
+    if (!usersAtRisk?.length) return NextResponse.json({ ok: true, notified: 0 })
 
-    // Usuarios que llevan más de 20h sin sesión Y tienen suscripciones push activas
-    const { data: usersAtRisk } = await supabaseAdmin
-      .from('user_profiles')
-      .select('id, streak')
-      .lt('last_session_at', new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString())
-      .gt('streak', 0)
+    const { data: subscriptions, error: subscriptionsError } = await admin.from('push_subscriptions')
+      .select('id, user_id, endpoint, p256dh, auth').in('user_id', usersAtRisk.map(user => user.id))
+    if (subscriptionsError) throw new Error('Subscription lookup failed')
 
-    if (!usersAtRisk?.length) {
-      return NextResponse.json({ ok: true, notified: 0 })
-    }
-
-    const userIds = usersAtRisk.map(u => u.id)
-
-    const { data: subscriptions } = await supabaseAdmin
-      .from('push_subscriptions')
-      .select('*')
-      .in('user_id', userIds)
-
-    if (!subscriptions?.length) {
-      return NextResponse.json({ ok: true, notified: 0 })
-    }
-
-    const streakMap = Object.fromEntries(usersAtRisk.map(u => [u.id, u.streak]))
-
+    const streakMap = new Map(usersAtRisk.map(user => [user.id, user.streak]))
     let sent = 0
     const invalidIds: string[] = []
-
-    for (const sub of subscriptions) {
-      const streak = streakMap[sub.user_id] ?? 0
-      const notification = {
-        title: streak >= 7 ? `🔥 ${streak} días seguidos — ¡no rompas la racha!` : '📚 Alex te espera hoy',
-        body: streak >= 3
-          ? `Llevas ${streak} días de racha. Haz aunque sea una lección para mantenerla.`
-          : 'Practica unos minutos de inglés hoy. Cada día cuenta.',
-        icon: '/icons/icon-192x192.png',
-        data: { url: '/dashboard' },
-      }
-
+    for (const sub of subscriptions ?? []) {
+      const streak = streakMap.get(sub.user_id) ?? 0
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          JSON.stringify(notification)
+          JSON.stringify({
+            title: streak >= 7 ? `🔥 ${streak} días seguidos — ¡no rompas la racha!` : '📚 Alex te espera hoy',
+            body: streak >= 3
+              ? `Llevas ${streak} días de racha. Haz aunque sea una lección para mantenerla.`
+              : 'Practica unos minutos de inglés hoy. Cada día cuenta.',
+            icon: '/icons/icon-192.png',
+            data: { url: '/dashboard' },
+          }),
         )
         sent++
-      } catch (err) {
-        const status = (err as { statusCode?: number }).statusCode
-        if (!status || (status >= 400 && status < 500 && status !== 429)) {
-          invalidIds.push(sub.id)
-        }
+      } catch (deliveryError) {
+        // Network failures and rate limits are retryable, not expired endpoints.
+        if (isExpiredSubscription(deliveryError)) invalidIds.push(sub.id)
       }
     }
 
-    // Limpiar suscripciones inválidas
     if (invalidIds.length) {
-      await supabaseAdmin.from('push_subscriptions').delete().in('id', invalidIds)
+      const { error: cleanupError } = await admin.from('push_subscriptions').delete().in('id', invalidIds)
+      if (cleanupError) throw new Error('Expired subscription removal failed')
     }
-
     return NextResponse.json({ ok: true, notified: sent, cleaned: invalidIds.length })
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json({ error: msg }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'Could not run reminders' }, { status: 500 })
   }
 }
+
+export const POST = GET

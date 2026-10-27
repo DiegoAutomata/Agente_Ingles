@@ -1,62 +1,52 @@
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type SetAllCookies } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
-  // Skip auth if Supabase not configured yet
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    return NextResponse.next({ request })
-  }
+const protectedPaths = [
+  '/dashboard', '/conversation', '/lesson', '/vocabulary', '/writing',
+  '/verb-drill', '/profile', '/challenge', '/puzzle', '/leaderboard',
+]
+const matchesPath = (pathname: string, paths: string[]) =>
+  paths.some(path => pathname === path || pathname.startsWith(path + '/'))
 
+export async function middleware(request: NextRequest) {
+  const isProtectedPath = matchesPath(request.nextUrl.pathname, protectedPaths)
+  const isAuthPath = matchesPath(request.nextUrl.pathname, ['/login', '/signup'])
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   let supabaseResponse = NextResponse.next({ request })
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
+  function redirect(path: string) {
+    const response = NextResponse.redirect(new URL(path, request.url))
+    supabaseResponse.cookies.getAll().forEach(cookie => response.cookies.set(cookie))
+    return response
+  }
+
+  if (!url || !key) {
+    return isProtectedPath ? redirect('/login?error=auth_not_configured') : supabaseResponse
+  }
+
+  try {
+    const supabase = createServerClient(url, key, {
       cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet: Array<{ name: string; value: string; options?: Record<string, unknown> }>) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          )
-          supabaseResponse = NextResponse.next({ request })
+        getAll: () => request.cookies.getAll(),
+        setAll(cookiesToSet: Parameters<SetAllCookies>[0]) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          const refreshed = NextResponse.next({ request })
+          supabaseResponse.cookies.getAll().forEach(cookie => refreshed.cookies.set(cookie))
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            refreshed.cookies.set(name, value, options)
           )
+          supabaseResponse = refreshed
         },
       },
-    }
-  )
-
-  const { data: { user } } = await supabase.auth.getUser()
-
-  // Rutas protegidas: redirigir a login si no autenticado
-  const protectedPaths = ['/dashboard', '/conversation', '/lesson', '/vocabulary', '/writing', '/verb-drill', '/profile']
-  const isProtectedPath = protectedPaths.some(path =>
-    request.nextUrl.pathname.startsWith(path)
-  )
-
-  if (isProtectedPath && !user) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
+    })
+    const { data: { user } } = await supabase.auth.getUser()
+    if (isProtectedPath && !user) return redirect('/login')
+    if (isAuthPath && user) return redirect('/dashboard')
+    return supabaseResponse
+  } catch {
+    return isProtectedPath ? redirect('/login?error=auth_unavailable') : supabaseResponse
   }
-
-  // Si ya está autenticado y va a auth pages, redirigir al dashboard
-  const authPaths = ['/login', '/signup']
-  const isAuthPath = authPaths.some(path =>
-    request.nextUrl.pathname.startsWith(path)
-  )
-
-  if (isAuthPath && user) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
-  }
-
-  return supabaseResponse
 }
 
 export const config = {

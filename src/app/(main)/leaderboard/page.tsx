@@ -36,11 +36,12 @@ export default async function LeaderboardPage({
     userLeague = profile?.league ?? 'bronce'
     const currentLeague = liga ?? userLeague
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .rpc('get_leaderboard', { league_filter: currentLeague })
 
+    if (error) throw error
     rows = (data ?? []) as LeaderboardRow[]
-  } catch { /* Supabase no configurado */ }
+  } catch (error) { throw error }
 
   const displayLeague = liga ?? userLeague
   const league = getLeague(displayLeague)

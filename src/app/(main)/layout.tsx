@@ -4,6 +4,8 @@ import FloatingAlexChat from '@/features/tutor/components/FloatingAlexChat'
 import { PushNotificationPrompt } from '@/features/notifications/components/PushNotificationPrompt'
 import { createClient } from '@/lib/supabase/server'
 
+export const dynamic = 'force-dynamic'
+
 export default async function MainLayout({
   children,
 }: {
@@ -17,9 +19,9 @@ export default async function MainLayout({
   } catch { /* Supabase not configured */ }
 
   return (
-    <div className="mesh-bg min-h-screen flex">
+    <div className="mesh-bg min-h-screen flex flex-col md:flex-row">
       <Sidebar />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 min-w-0 overflow-auto">
         {children}
       </main>
       <ThemePicker />

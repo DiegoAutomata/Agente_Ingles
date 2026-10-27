@@ -1,5 +1,8 @@
 'use client'
 
+import { useSessionAnalysis } from '../hooks/useSessionAnalysis'
+import SessionFeedback from './SessionFeedback'
+
 import { useChat } from '@ai-sdk/react'
 import { TextStreamChatTransport, UIMessage } from 'ai'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -25,31 +28,16 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [mounted, setMounted] = useState(false)
-  const [analyzingSession, setAnalyzingSession] = useState(false)
-  const [sessionDone, setSessionDone] = useState(false)
+  const session = useSessionAnalysis(mode)
+  const analyzingSession = session.saving
+  const sessionDone = session.done
 
   useEffect(() => { setMounted(true) }, [])
 
   async function handleEndSession() {
-    if (messages.length < 3 || analyzingSession) return
-    setAnalyzingSession(true)
-    const transcript = messages.map(m => ({
-      role: m.role,
-      content: getMessageText(m),
-    }))
-    try {
-      await fetch('/api/analyze-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transcript,
-          session_id: `conversation-${Date.now()}`,
-        }),
-      })
-    } catch { /* offline */ } finally {
-      setAnalyzingSession(false)
-      setSessionDone(true)
-    }
+    if (messages.length < 3 || isLoading) return
+    stopListening(); stopSpeaking()
+    await session.save(messages)
   }
 
   const transport = useMemo(
@@ -64,7 +52,7 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
     [initialMessage]
   )
 
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, error: chatError, regenerate } = useChat({
     transport,
     messages: initialMessages,
     onFinish: ({ message }) => {
@@ -108,7 +96,7 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
 
   function handleFormSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!input.trim() || isLoading) return
+    if (!input.trim() || isLoading || sessionDone) return
     stopListening()
     stopSpeaking()
     sendMessage({ text: input })
@@ -124,7 +112,7 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
           {(mode === 'conversation' || mode === 'writing' || mode === 'verb_drill') && messages.length >= 3 && !sessionDone && (
             <button
               onClick={handleEndSession}
-              disabled={analyzingSession}
+              disabled={analyzingSession || isLoading}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-all bg-green-500/15 text-green-300 border border-green-500/20 hover:bg-green-500/25 disabled:opacity-50"
             >
               {analyzingSession ? '⏳ Analizando…' : '✅ Terminar sesión'}
@@ -152,6 +140,9 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
         </div>
       </div>
 
+      {session.error && <p role="alert" className="p-3 text-red-300">{session.error}</p>}
+      <SessionFeedback feedback={session.feedback} />
+      {chatError && <div role="alert" className="p-3 text-red-300">Alex no pudo responder. Verifica tu conexión o vuelve a iniciar sesión. <button onClick={() => regenerate()}>Reintentar respuesta</button></div>}
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map(message => {
@@ -226,6 +217,8 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
             <button
               type="button"
               onClick={handleVoiceToggle}
+              disabled={sessionDone || isLoading}
+              aria-label="Activar o detener micrófono"
               className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
                 isListening
                   ? 'bg-violet-500 text-white voice-active'
@@ -241,12 +234,13 @@ export default function TutorChat({ mode, initialMessage, placeholder }: TutorCh
             onChange={e => setInput(e.target.value)}
             placeholder={isListening ? 'Escuchando...' : (placeholder ?? 'Escribe o habla en inglés...')}
             className="input-field flex-1"
-            readOnly={isListening}
+            readOnly={isListening || sessionDone}
+            aria-label="Mensaje para Alex"
           />
 
           <button
             type="submit"
-            disabled={isLoading || !input.trim()}
+            disabled={isLoading || !input.trim() || sessionDone}
             className="shrink-0 w-10 h-10 rounded-xl btn-primary p-0 flex items-center justify-center disabled:opacity-40"
           >
             ↑

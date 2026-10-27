@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import type { WritingFeedback } from '@/app/api/writing-coach/route'
-import { createClient } from '@/lib/supabase/client'
 
 const PROMPTS = [
   { label: '📧 Email al jefe',     text: 'Write a short email to your boss saying you will be 15 minutes late to the morning meeting due to a traffic jam.' },
@@ -48,15 +47,14 @@ export default function CorrectionBoard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, prompt: activePrompt }),
       })
-      if (!res.ok) throw new Error('Error del servidor')
+      if (!res.ok) {
+        const failure = await res.json()
+        throw new Error(failure.error || 'No se pudo guardar la corrección.')
+      }
       const data = (await res.json()) as WritingFeedback
       setFeedback(data)
       setPhase('results')
 
-      // Award XP + update learner profile (fire-and-forget)
-      const xp = Math.round(data.overallScore * 8) // max 80 XP
-      const supabase = createClient()
-      supabase.rpc('increment_xp', { xp_amount: xp }).then(() => {})
       const errorSummary = data.errors.map(e => `${e.type}: "${e.wrong}" → "${e.correct}"`).join('; ')
       fetch('/api/analyze-session', {
         method: 'POST',
@@ -69,8 +67,8 @@ export default function CorrectionBoard() {
           session_id: `writing-${Date.now()}`,
         }),
       }).catch(() => {})
-    } catch {
-      setError('No se pudo analizar el texto. Verificá la conexión e intentá de nuevo.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo analizar el texto.')
       setPhase('write')
     }
   }
@@ -109,6 +107,8 @@ export default function CorrectionBoard() {
         <div className="relative">
           <textarea
             value={text}
+            maxLength={6000}
+            aria-label="Texto en inglés"
             onChange={e => setText(e.target.value)}
             placeholder="Write your English text here... (email, message, cover letter, paragraph — anything!)"
             rows={10}
@@ -196,12 +196,12 @@ export default function CorrectionBoard() {
                 <div className="flex items-start gap-3 mb-3">
                   <div className="flex-1">
                     <p className="text-xs text-white/30 mb-0.5">Incorrecto</p>
-                    <p className="text-sm line-through opacity-60">"{err.wrong}"</p>
+                    <p className="text-sm line-through opacity-60">&ldquo;{err.wrong}&rdquo;</p>
                   </div>
                   <div className="text-white/20 mt-4">→</div>
                   <div className="flex-1">
                     <p className="text-xs text-white/30 mb-0.5">Correcto</p>
-                    <p className="text-sm font-semibold text-green-300">"{err.correct}"</p>
+                    <p className="text-sm font-semibold text-green-300">&ldquo;{err.correct}&rdquo;</p>
                   </div>
                 </div>
                 <p className="text-xs text-white/50 leading-relaxed border-t border-white/10 pt-2">

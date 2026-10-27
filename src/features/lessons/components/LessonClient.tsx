@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { getLessonContentAsync, buildChallengeContent, type LessonContent } from '../data/lesson-content'
-import { LEAGUES } from '@/shared/constants/leagues'
 import { useLives } from '../hooks/useLives'
 import ConceptCard from './exercises/ConceptCard'
 import MultipleChoice from './exercises/MultipleChoice'
@@ -12,7 +11,6 @@ import SentenceBuilder from './exercises/SentenceBuilder'
 import FillBlank from './exercises/FillBlank'
 import StepMap from './StepMap'
 import CompletionSummary from './CompletionSummary'
-import { createClient } from '@/lib/supabase/client'
 
 interface AnswerRecord {
   type: LessonContent['exercises'][number]['type']
@@ -21,59 +19,22 @@ interface AnswerRecord {
   correctAnswer?: string
 }
 
-function buildLessonTranscript(
-  answers: AnswerRecord[],
-  lessonTitle: string,
-): Array<{ role: string; content: string }> {
-  const msgs: Array<{ role: string; content: string }> = [
-    { role: 'assistant', content: `Lesson: "${lessonTitle}". Practice session.` },
-  ]
-  for (const a of answers) {
-    if (a.type === 'concept') continue
-    if (a.question) msgs.push({ role: 'assistant', content: a.question })
-    const outcome = a.wasCorrect ? '[correct]' : '[incorrect]'
-    const detail = a.correctAnswer ? ` Correct answer: "${a.correctAnswer}"` : ''
-    msgs.push({ role: 'user', content: `${outcome}${detail}` })
-  }
-  return msgs
-}
-
 interface Props {
   serverLesson: number
   league: string
   mode: 'lesson' | 'challenge'
-}
-
-interface LocalProgress {
-  league: string
-  lesson: number
-}
-
-function getLocalProgress(fallbackLeague: string, fallbackLesson: number): LocalProgress {
-  try {
-    const raw = localStorage.getItem('alex-progress')
-    if (raw) return JSON.parse(raw) as LocalProgress
-  } catch { /* ignore */ }
-  return { league: fallbackLeague, lesson: fallbackLesson }
-}
-
-function saveLocalProgress(league: string, lesson: number) {
-  try {
-    localStorage.setItem('alex-progress', JSON.stringify({ league, lesson }))
-  } catch { /* ignore */ }
-}
-
-function getMaxLevels(leagueId: string): number {
-  return LEAGUES.find(l => l.id === leagueId)?.levels ?? 11
-}
-
-function getNextLeague(currentId: string): string | null {
-  const idx = LEAGUES.findIndex(l => l.id === currentId)
-  return idx >= 0 && idx < LEAGUES.length - 1 ? LEAGUES[idx + 1].id : null
+  userId?: string
 }
 
 function RechargeCountdown({ target }: { target: number }) {
-  const diff = Math.max(0, target - Date.now())
+  const [now, setNow] = useState(0)
+  useEffect(() => {
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  if (!now) return <p>Cargando tiempo de recarga…</p>
+  const diff = Math.max(0, target - now)
   const h = Math.floor(diff / 3600000)
   const m = Math.floor((diff % 3600000) / 60000)
   return (
@@ -83,11 +44,12 @@ function RechargeCountdown({ target }: { target: number }) {
   )
 }
 
-export default function LessonClient({ serverLesson, league: serverLeague, mode }: Props) {
+export default function LessonClient({ serverLesson, league: serverLeague, mode, userId }: Props) {
   const isChallenge = mode === 'challenge'
-  const { lives, loseLife, nextRechargeAt } = useLives(isChallenge)
+  const { lives, loseLife, nextRechargeAt } = useLives(isChallenge, userId)
 
   const [content, setContent] = useState<LessonContent | null>(null)
+  const [loadError, setLoadError] = useState(false)
   const [actualLesson, setActualLesson] = useState<number | null>(null)
   const [actualLeague, setActualLeague] = useState<string>(serverLeague)
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -95,16 +57,17 @@ export default function LessonClient({ serverLesson, league: serverLeague, mode 
   const [score, setScore] = useState(0)
   const [completed, setCompleted] = useState(false)
   const [xpEarned, setXpEarned] = useState(0)
-  const [outOfLives, setOutOfLives] = useState(false)
   const [answers, setAnswers] = useState<AnswerRecord[]>([])
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const pendingScore = useRef<number | null>(null)
+  const saveLock = useRef(false)
+  const hadMatchMistake = useRef(false)
 
-  // Resolve actual lesson from localStorage vs server
+  // The authenticated server profile is the source of progress.
   useEffect(() => {
-    const local = getLocalProgress(serverLeague, serverLesson)
-    const resolvedLeague = local.league ?? serverLeague
-    const resolvedLesson = Math.max(serverLesson, local.lesson)
-    setActualLeague(resolvedLeague)
-    setActualLesson(resolvedLesson)
+    setActualLeague(serverLeague)
+    setActualLesson(serverLesson)
   }, [serverLesson, serverLeague])
 
   // Load content once lesson is resolved
@@ -126,12 +89,15 @@ export default function LessonClient({ serverLesson, league: serverLeague, mode 
       getLessonContentAsync(actualLeague, actualLesson)
         .then(setContent)
         .catch(() => {
-          // fallback: load bronce L1
-          getLessonContentAsync('bronce', 1).then(setContent)
+          setLoadError(true)
         })
     }
   }, [actualLesson, actualLeague, isChallenge])
 
+  if (loadError) return <div role="alert" className="p-6 space-y-4">
+    <p>No se pudo cargar esta lección. Tu progreso está guardado.</p>
+    <button className="btn-primary" onClick={() => window.location.reload()}>Reintentar</button>
+  </div>
   if (!content || actualLesson === null) {
     return (
       <div className="flex items-center justify-center flex-1">
@@ -159,6 +125,8 @@ export default function LessonClient({ serverLesson, league: serverLeague, mode 
   }
 
   function handleDone(wasCorrect: boolean) {
+    if (exercise.type === 'word_match' && hadMatchMistake.current) wasCorrect = false
+    hadMatchMistake.current = false
     const newScore = wasCorrect ? score + 1 : score
     if (wasCorrect) setScore(newScore)
 
@@ -181,10 +149,9 @@ export default function LessonClient({ serverLesson, league: serverLeague, mode 
 
     setAnswers(prev => [...prev, { type: exercise.type, wasCorrect, question, correctAnswer }])
 
-    if (!wasCorrect && isChallenge) {
+    if (!wasCorrect && isChallenge && exercise.type !== 'word_match') {
       const remaining = loseLife()
       if (remaining <= 0) {
-        setOutOfLives(true)
         return
       }
     }
@@ -193,62 +160,47 @@ export default function LessonClient({ serverLesson, league: serverLeague, mode 
   }
 
   function handleMistake() {
+    hadMatchMistake.current = true
     if (!isChallenge) return
     const remaining = loseLife()
-    if (remaining <= 0) setOutOfLives(true)
+    if (remaining <= 0) return
   }
 
   async function doFinish(finalScore: number) {
-    const accuracy = scoredTotal > 0 ? finalScore / scoredTotal : 1
-    const xp = Math.round(accuracy * loadedContent.xpReward * (isChallenge ? 2 : 1))
-    setXpEarned(xp)
-    setCompleted(true)
-
-    if (!isChallenge) {
-      const maxLevels = getMaxLevels(actualLeague)
-      let nextLeague = actualLeague
-      let nextLesson = loadedLesson + 1
-      if (loadedLesson >= maxLevels) {
-        const next = getNextLeague(actualLeague)
-        if (next) {
-          nextLeague = next
-          nextLesson = 1
-        } else {
-          nextLesson = maxLevels
-        }
-      }
-      saveLocalProgress(nextLeague, nextLesson)
-
-      try {
-        await fetch('/api/complete-lesson', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ xp_amount: xp }),
-        })
-      } catch { /* offline */ }
-    } else {
-      try {
-        const supabase = createClient()
-        await supabase.rpc('increment_xp', { xp_amount: xp })
-      } catch { /* offline */ }
-    }
-
-    // Fire-and-forget: update learner profile with session analysis
-    const transcript = buildLessonTranscript(answers, loadedContent.title)
-    if (transcript.length >= 3) {
-      fetch('/api/analyze-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transcript,
-          session_id: `lesson-${actualLeague}-${loadedLesson}-${Date.now()}`,
-        }),
-      }).catch(() => {})
+    if (saveLock.current) return
+    saveLock.current = true
+    pendingScore.current = finalScore
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const response = await fetch('/api/complete-lesson', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, league: actualLeague, lesson: loadedLesson }),
+      })
+      const result = await response.json()
+      if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo guardar. Reintenta sin cerrar esta pantalla.')
+      setXpEarned(result.result.xp_awarded)
+      setCompleted(true)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'No se pudo guardar. Reintenta.')
+    } finally {
+      saveLock.current = false
+      setSaving(false)
     }
   }
 
+  if (saving || saveError) return (
+    <div className="p-6 space-y-4 max-w-lg mx-auto">
+      {saving ? <p role="status">Guardando tu progreso…</p> : <>
+        <p role="alert" className="text-red-300">{saveError}</p>
+        <button className="btn-primary" onClick={() => doFinish(pendingScore.current ?? score)}>Reintentar guardado</button>
+        <Link className="btn-ghost" href="/dashboard">Volver al inicio</Link>
+      </>}
+    </div>
+  )
+
   // ── Out of lives ──────────────────────────────────────────────
-  if (outOfLives) {
+  if (isChallenge && lives <= 0) {
     return (
       <div className="flex flex-col items-center justify-center flex-1 p-8 text-center space-y-5">
         <div className="text-6xl pop-in">💔</div>
@@ -321,7 +273,10 @@ export default function LessonClient({ serverLesson, league: serverLeague, mode 
       {/* Current exercise */}
       <div key={slideKey} className="slide-up">
         {exercise.type === 'concept' && (
-          <ConceptCard exercise={exercise} onNext={() => goNext(score)} />
+          <ConceptCard exercise={exercise} onNext={() => {
+            setAnswers(prev => [...prev, { type: 'concept', wasCorrect: true }])
+            goNext(score)
+          }} />
         )}
         {exercise.type === 'multiple_choice' && (
           <MultipleChoice exercise={exercise} onDone={handleDone} />

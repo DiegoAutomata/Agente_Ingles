@@ -22,6 +22,9 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="Agente Inglés" />
       </head>
       <body className="antialiased">
+        {process.env.LOCAL_PREVIEW === '1' && <div className="bg-amber-100 text-amber-950 px-4 py-2 text-sm text-center">
+          Evaluación local · Datos de prueba · IA, correos y notificaciones reales desactivados
+        </div>}
         {children}
         <PWARegister />
       </body>

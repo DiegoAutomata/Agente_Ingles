@@ -1,5 +1,5 @@
 import { createGroq } from '@ai-sdk/groq'
-import { streamText, convertToModelMessages, UIMessage } from 'ai'
+import { streamText, convertToModelMessages } from 'ai'
 import { createClient } from '@/lib/supabase/server'
 import { z } from 'zod'
 
@@ -13,7 +13,7 @@ function buildSystemPrompt(
   userProfile: { ghio_lesson: number; module: number; xp: number; streak: number } | null
 ): string {
   const lesson = userProfile?.ghio_lesson ?? 1
-  const module = userProfile?.module ?? 1
+  const moduleNumber = userProfile?.module ?? 1
   const xp = userProfile?.xp ?? 0
   const streak = userProfile?.streak ?? 0
 
@@ -35,8 +35,8 @@ function buildSystemPrompt(
 • CERO markdown: sin asteriscos, sin guiones, sin listas, sin corchetes, sin emojis.
 • Lenguaje 100% oral y natural, como una charla telefónica.
 • SIEMPRE termina con una pregunta corta o una frase para que el usuario repita.
-• Explica en español, practica en inglés. Patrón: corrección breve en español → frase en inglés → pregunta.
-• Correcciones inmediatas y amables: "Casi bien. Lo correcto es [forma]. Intentá: [frase corta]."
+• En este modo oral practica en INGLÉS con vocabulario sencillo. Usa español sólo si el alumno pide una explicación. No leas traducciones, fonética ni símbolos en voz alta. Esta regla de voz prevalece sobre las reglas generales de idioma y fonética.
+• Correcciones cortas en inglés, modelando la forma correcta y permitiendo repetir. No diagnostiques pronunciación desde texto.
 • Celebraciones breves: "Perfecto." o "Muy bien." — nada más largo.
 • Si el mensaje es [SILENCE_TIMEOUT] o está vacío, responde solo: "¿Seguís ahí? Cuando quieras, seguimos."`,
   }
@@ -45,7 +45,7 @@ function buildSystemPrompt(
 Tu método base: Augusto Ghio "Inglés Básico" — 850 palabras + 16 verbos básicos.
 
 ═══ PERFIL DE TU ALUMNO ═══
-• Nivel: Lección Ghio ${lesson}/11 — Módulo ${module}/3
+• Nivel: Lección Ghio ${lesson}/11 — Módulo ${moduleNumber}/3
 • XP acumulado: ${xp} puntos
 • Racha: ${streak} días consecutivos
 • Fortalezas: ${strengths}
@@ -77,7 +77,21 @@ ${modeInstructions[mode] || modeInstructions.conversation}
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { messages?: UIMessage[]; mode?: string }
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return Response.json({ error: 'Inicia sesión para conversar.' }, { status: 401 })
+    const body = z.object({
+      mode: ModeSchema.optional(),
+      messages: z.array(z.object({
+        id: z.string().max(200),
+        role: z.enum(['user', 'assistant']),
+        parts: z.array(z.object({ type: z.literal('text'), text: z.string().max(6000) })).min(1).max(5),
+      })).min(1).max(80),
+    }).parse(await request.json())
+    if (body.messages.reduce((n, m) => n + m.parts.reduce((p, t) => p + t.text.length, 0), 0) > 40000) {
+      return Response.json({ error: 'Conversación demasiado larga. Inicia otra sesión.' }, { status: 400 })
+    }
+    if (!process.env.GROQ_API_KEY) return Response.json({ error: 'El tutor no está configurado.' }, { status: 503 })
     const mode = ModeSchema.parse(body.mode ?? 'conversation')
     const uiMessages = body.messages ?? []
 
@@ -118,7 +132,7 @@ export async function POST(request: Request) {
 
     return result.toTextStreamResponse()
   } catch (error) {
-    if (error instanceof z.ZodError) {
+    if (error instanceof z.ZodError || error instanceof SyntaxError) {
       return new Response(JSON.stringify({ error: 'Invalid request' }), { status: 400 })
     }
     console.error('Tutor API error:', error)

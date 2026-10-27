@@ -1,73 +1,55 @@
+import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 
-function sm2(interval: number, repetitions: number, easeFactor: number, quality: number) {
-  // quality: 0=Again, 1=Hard, 2=Good, 3=Easy → mapped to SM-2 q: 0, 2, 4, 5
-  const q = [0, 2, 4, 5][quality] ?? 4
-
-  let newInterval: number
-  let newRepetitions: number
-  let newEaseFactor: number
-
-  if (q < 3) {
-    newInterval = 1
-    newRepetitions = 0
-    newEaseFactor = easeFactor
-  } else {
-    if (repetitions === 0) newInterval = 1
-    else if (repetitions === 1) newInterval = 6
-    else newInterval = Math.round(interval * easeFactor)
-
-    newEaseFactor = Math.max(
-      1.3,
-      easeFactor + 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02),
-    )
-    newRepetitions = repetitions + 1
-  }
-
-  const nextReviewAt = new Date(Date.now() + newInterval * 86_400_000).toISOString()
-
-  return { newInterval, newRepetitions, newEaseFactor, nextReviewAt }
-}
+const reviewInput = z.object({
+  wordId: z.number().int().positive().max(2_147_483_647),
+  quality: z.number().int().min(0).max(3),
+}).strict()
 
 export async function POST(req: Request) {
   try {
-    const { wordId, quality } = (await req.json()) as { wordId: number; quality: number }
-
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return new Response('Unauthorized', { status: 401 })
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return Response.json({ ok: false, error: 'Iniciá sesión para guardar el repaso.' }, { status: 401 })
+    }
 
-    const { data: existing } = await supabase
-      .from('user_vocabulary')
-      .select('srs_interval, srs_repetitions, srs_ease_factor')
-      .eq('user_id', user.id)
-      .eq('word_id', wordId)
-      .single()
+    let payload: unknown
+    try {
+      payload = await req.json()
+    } catch {
+      return Response.json({ ok: false, error: 'El cuerpo debe ser JSON válido.' }, { status: 400 })
+    }
+    const input = reviewInput.safeParse(payload)
+    if (!input.success) {
+      return Response.json({ ok: false, error: 'La palabra y la valoración no son válidas.' }, { status: 400 })
+    }
+    const { wordId, quality } = input.data
 
-    const interval     = existing?.srs_interval    ?? 1
-    const repetitions  = existing?.srs_repetitions ?? 0
-    const easeFactor   = existing?.srs_ease_factor ?? 2.5
-
-    const { newInterval, newRepetitions, newEaseFactor, nextReviewAt } = sm2(
-      interval, repetitions, easeFactor, quality,
-    )
-
-    await supabase.from('user_vocabulary').upsert({
-      user_id:         user.id,
-      word_id:         wordId,
-      srs_interval:    newInterval,
-      srs_repetitions: newRepetitions,
-      srs_ease_factor: newEaseFactor,
-      next_review_at:  nextReviewAt,
-      last_reviewed_at: new Date().toISOString(),
-      mastered:        newRepetitions >= 4 && newInterval >= 21,
+    const { data: saved, error: saveError } = await supabase.rpc('review_vocabulary', {
+      word_id_param: wordId,
+      quality_param: quality,
     })
 
-    return new Response(JSON.stringify({ ok: true }), {
-      headers: { 'Content-Type': 'application/json' },
+    if (saveError?.code === '23503') {
+      return Response.json({ ok: false, error: 'La palabra ya no está disponible. Actualizá el mazo.' }, { status: 404 })
+    }
+    if (saveError) throw saveError
+    if (!saved) throw new Error('SRS save returned no progress')
+
+    return Response.json({
+      ok: true,
+      review: {
+        wordId: saved.word_id,
+        interval: saved.srs_interval,
+        repetitions: saved.srs_repetitions,
+        easeFactor: saved.srs_ease_factor,
+        nextReviewAt: saved.next_review_at,
+        mastered: saved.mastered,
+      },
     })
   } catch (error) {
     console.error('srs-review error:', error)
-    return new Response(JSON.stringify({ ok: false }), { status: 500 })
+    return Response.json({ ok: false, error: 'No se pudo guardar el repaso. Reintentá.' }, { status: 500 })
   }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 interface Word {
   word: string
@@ -33,7 +33,8 @@ function shuffle(str: string): string {
     const j = Math.floor(Math.random() * (i + 1))
     ;[arr[i], arr[j]] = [arr[j], arr[i]]
   }
-  return arr.join('') === str && str.length > 1 ? shuffle(str) : arr.join('')
+  const value = arr.join('')
+  return value === str ? str.slice(1) + str[0] : value
 }
 
 function pickRandom(): Word {
@@ -43,11 +44,11 @@ function pickRandom(): Word {
 type Status = 'playing' | 'correct' | 'wrong'
 
 export default function PuzzlePage() {
-  const [current, setCurrent] = useState<Word>(() => pickRandom())
-  const [scrambled, setScrambled] = useState<string>(() => {
-    const w = pickRandom()
-    return shuffle(w.word)
-  })
+  const [{ current, scrambled }, setPuzzle] = useState(() => ({ current: WORD_BANK[0], scrambled: 'emco' }))
+  useEffect(() => {
+    const word = pickRandom()
+    setPuzzle({ current: word, scrambled: shuffle(word.word) })
+  }, [])
   const [input, setInput] = useState('')
   const [status, setStatus] = useState<Status>('playing')
   const [score, setScore] = useState(0)
@@ -55,8 +56,7 @@ export default function PuzzlePage() {
 
   const loadNext = useCallback(() => {
     const next = pickRandom()
-    setCurrent(next)
-    setScrambled(shuffle(next.word))
+    setPuzzle({ current: next, scrambled: shuffle(next.word) })
     setInput('')
     setStatus('playing')
   }, [])
@@ -107,6 +107,7 @@ export default function PuzzlePage() {
             onChange={e => setInput(e.target.value)}
             disabled={status !== 'playing'}
             placeholder="Escribe la palabra..."
+            aria-label="Respuesta al puzzle"
             className="input-field flex-1 text-center uppercase"
             autoComplete="off"
             autoFocus

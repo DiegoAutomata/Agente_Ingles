@@ -46,12 +46,14 @@ export default async function ProfilePage() {
       supabase.from('writing_submissions').select('score, user_text, ai_feedback, created_at').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5),
     ])
 
+    for (const result of [profileRes, learnerRes]) if (result.error) throw result.error
     profile = profileRes.data
     learnerProfile = learnerRes.data?.profile_json as Record<string, unknown> | null
+    for (const result of [sessionsRes, errorsRes, writingRes]) if (result.error) throw result.error
     recentSessions = sessionsRes.data ?? []
     recentErrors = errorsRes.data ?? []
     recentWriting = writingRes.data ?? []
-  } catch { /* Supabase no configurado */ }
+  } catch (error) { throw error }
 
   const xp = profile?.xp ?? 0
   const streak = profile?.streak ?? 0
@@ -175,9 +177,9 @@ export default async function ProfilePage() {
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm line-through text-white/40">"{err.user_attempt}"</span>
+                    <span className="text-sm line-through text-white/40">&ldquo;{err.user_attempt}&rdquo;</span>
                     <span className="text-white/20 text-xs">→</span>
-                    <span className="text-sm text-green-300">"{err.correct_form}"</span>
+                    <span className="text-sm text-green-300">&ldquo;{err.correct_form}&rdquo;</span>
                   </div>
                   {err.pattern && (
                     <p className="text-xs text-white/30 mt-0.5 truncate">{err.pattern}</p>

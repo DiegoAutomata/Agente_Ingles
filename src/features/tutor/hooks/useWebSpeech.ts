@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 
 interface UseWebSpeechOptions {
   language?: string
@@ -24,9 +24,11 @@ export function useWebSpeech({
   const onResultRef = useRef(onResult)
   const onInterimRef = useRef(onInterim)
   const onErrorRef = useRef(onError)
-  onResultRef.current = onResult
-  onInterimRef.current = onInterim
-  onErrorRef.current = onError
+  useEffect(() => {
+    onResultRef.current = onResult
+    onInterimRef.current = onInterim
+    onErrorRef.current = onError
+  }, [onResult, onInterim, onError])
 
   const isSupported = typeof window !== 'undefined' &&
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
@@ -131,6 +133,11 @@ export function useWebSpeech({
   const stopListening = useCallback(() => {
     clearTimeout(stopTimerRef.current ?? undefined)
     recognitionRef.current?.stop()
+  }, [])
+
+  useEffect(() => () => {
+    clearTimeout(stopTimerRef.current ?? undefined)
+    recognitionRef.current?.abort()
   }, [])
 
   return {

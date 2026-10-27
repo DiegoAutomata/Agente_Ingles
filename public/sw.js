@@ -1,7 +1,7 @@
 // Service Worker — Agente Inglés PWA
 // CRÍTICO: NO incluir fetch handler (rompe iOS Safari PWA)
 
-const CACHE_NAME = 'agente-ingles-v1';
+const CACHE_NAME = 'agente-ingles-v2';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -43,7 +43,11 @@ self.addEventListener('push', (event) => {
 // Click: navegar a la URL de la notificación
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || '/dashboard';
+  let url = self.location.origin + '/dashboard';
+  try {
+    const target = new URL(event.notification.data?.url || '/dashboard', self.location.origin);
+    if (target.origin === self.location.origin) url = target.href;
+  } catch { /* Invalid links fall back to the dashboard. */ }
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true })
@@ -67,23 +71,27 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// Auto-reactivar si el browser invalida la suscripción push
+// Renew with the current session, and let open clients retry persistence on failure.
 self.addEventListener('pushsubscriptionchange', (event) => {
-  event.waitUntil(
-    self.registration.pushManager
-      .subscribe(event.oldSubscription?.options || {
-        userVisibleOnly: true,
-        applicationServerKey: event.oldSubscription?.options?.applicationServerKey,
-      })
-      .then((newSub) =>
-        fetch('/api/notifications/subscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            subscription: newSub.toJSON(),
-            oldEndpoint: event.oldSubscription?.endpoint,
-          }),
-        })
-      )
-  );
+  event.waitUntil((async () => {
+    let ok = false;
+    try {
+      const options = event.oldSubscription?.options;
+      if (!options?.applicationServerKey) throw new Error('Missing subscription options');
+      const subscription = await self.registration.pushManager.subscribe(options);
+      const response = await fetch('/api/notifications/subscribe', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subscription: subscription.toJSON(),
+          oldEndpoint: event.oldSubscription?.endpoint,
+        }),
+      });
+      if (!response.ok || !(await response.json()).success) throw new Error('Subscription not saved');
+      ok = true;
+    } catch { /* The signed-in page can retry; never claim persistence succeeded. */ }
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    windows.forEach(client => client.postMessage({ type: 'PUSH_SUBSCRIPTION_CHANGED', ok }));
+  })());
 });

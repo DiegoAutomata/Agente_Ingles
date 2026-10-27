@@ -42,7 +42,7 @@ function AlexChatPanel({ pathname, onClose }: { pathname: string; onClose: () =>
     [pathname]
   )
 
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, error, regenerate } = useChat({
     transport,
     messages: initialMessages,
   })
@@ -62,7 +62,7 @@ function AlexChatPanel({ pathname, onClose }: { pathname: string; onClose: () =>
 
   return (
     <div
-      className="fixed bottom-[88px] right-6 z-50 w-[340px] flex flex-col glass-card border-violet-500/20 rounded-2xl overflow-hidden shadow-2xl shadow-black/40"
+      className="fixed bottom-[88px] right-4 z-50 w-[min(340px,calc(100vw-2rem))] flex flex-col glass-card border-violet-500/20 rounded-2xl overflow-hidden shadow-2xl shadow-black/40"
       style={{ height: '300px', animation: 'slide-up 0.2s ease-out' }}
     >
       {/* Header */}
@@ -80,6 +80,7 @@ function AlexChatPanel({ pathname, onClose }: { pathname: string; onClose: () =>
         </button>
       </div>
 
+      {error && <div role="alert" className="p-3 text-red-300 text-sm">No se pudo responder. <button onClick={() => regenerate()}>Reintentar</button></div>}
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
         {messages.map(message => {
@@ -172,7 +173,7 @@ export default function FloatingAlexChat() {
       {/* Floating button */}
       <button
         onClick={() => setIsOpen(prev => !prev)}
-        className={`fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full flex flex-col items-center justify-center gap-0 shadow-lg transition-all
+        className={`fixed bottom-6 right-4 z-50 w-14 h-14 rounded-full flex flex-col items-center justify-center gap-0 shadow-lg transition-all
           bg-gradient-to-br from-violet-500 to-indigo-600 border border-violet-400/30
           hover:scale-105 active:scale-95
           ${!isOpen ? 'shadow-violet-500/30' : 'shadow-none scale-95'}

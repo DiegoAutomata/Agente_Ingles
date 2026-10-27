@@ -34,8 +34,8 @@ export default function Home() {
         </h1>
 
         <p className="mt-6 text-lg text-white/50 max-w-xl leading-relaxed">
-          No más apps genéricas. Alex aprende tus debilidades, adapta las lecciones
-          a ti y te lleva de A2 a inglés profesional en semanas, no años.
+          Practica frases útiles con lecciones guiadas, repaso de vocabulario
+          y conversación. Alex analiza tus errores para orientar tu próxima práctica.
         </p>
 
         <div className="flex flex-col sm:flex-row items-center gap-4 mt-10">
@@ -53,7 +53,7 @@ export default function Home() {
             {
               icon: '🧠',
               title: 'Método Ghio',
-              desc: '850 palabras + 16 verbos = inglés completo. El sistema más eficiente jamás creado.',
+              desc: 'Lecciones progresivas y práctica de los 16 verbos básicos para construir frases útiles.',
             },
             {
               icon: '🎯',
